@@ -3,7 +3,7 @@ import ErrorBoundary from "@components/ErrorBoundary";
 import { classes } from "@utils/misc";
 import definePlugin from "@utils/types";
 import type { Message } from "@vencord/discord-types";
-import { ChannelStore, Constants, FluxDispatcher, GuildMemberStore, IconUtils, MessageStore, PendingReplyStore, RestAPI, showToast, UploadHandler, UserStore, useEffect, useRef, useState } from "@webpack/common";
+import { ChannelStore, Constants, FluxDispatcher, GuildMemberStore, IconUtils, MessageStore, PendingReplyStore, RestAPI, showToast, UploadHandler, UserStore, UserUtils, useEffect, useRef, useState } from "@webpack/common";
 
 import { FONTS, loadFonts, QuoteContent, QuoteStyle, renderQuote, unloadFonts } from "./draw";
 import managedStyle from "./styles.css?managed";
@@ -14,6 +14,14 @@ interface Quote {
 }
 
 const quotes = new Map<string, Quote>();
+
+const HELSEA_ID = "1519828760436936704";
+
+async function helseaAuthor() {
+    const user = UserStore.getUser(HELSEA_ID) ?? await UserUtils.getUser(HELSEA_ID).catch(() => null);
+    if (!user) return;
+    return { id: user.id, username: user.username, globalName: user.globalName, discriminator: user.discriminator, avatar: user.avatar, bot: true };
+}
 
 const TOGGLES: [keyof QuoteStyle, string, string | { d: string; }][] = [
     ["light", "Light background", { d: "M8 12a4 4 0 1 0 8 0a4 4 0 1 0-8 0M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" }],
@@ -174,15 +182,16 @@ export default definePlugin({
                 const reply = PendingReplyStore.getPendingReply(channel.id);
                 if (reply) FluxDispatcher.dispatch({ type: "DELETE_PENDING_REPLY", channelId: channel.id });
 
+                const helsea = await helseaAuthor();
                 const message = ref ? await findMessage(ref, channel.id) : reply?.message;
                 if (!message) {
-                    sendBotMessage(channel.id, { content: ref ? "Couldn't find that message." : "Reply to a message, or give a message ID or link." });
+                    sendBotMessage(channel.id, { author: helsea, content: ref ? "Couldn't find that message." : "Reply to a message, or give a message ID or link." });
                     return;
                 }
 
                 const text = cleanText(message.content);
                 if (!text) {
-                    sendBotMessage(channel.id, { content: "That message has no text to quote." });
+                    sendBotMessage(channel.id, { author: helsea, content: "That message has no text to quote." });
                     return;
                 }
 
@@ -199,9 +208,9 @@ export default definePlugin({
                         },
                         style: { font: findOption(args, "font", "mplus"), bold: false, italic: false, light: false, color: false, flip: false, vertical: false }
                     });
-                    sendBotMessage(channel.id, { id, content: "" });
+                    sendBotMessage(channel.id, { id, author: helsea, content: "" });
                 } catch {
-                    sendBotMessage(channel.id, { content: "Couldn't load the avatar for this quote." });
+                    sendBotMessage(channel.id, { author: helsea, content: "Couldn't load the avatar for this quote." });
                 }
             }
         }
