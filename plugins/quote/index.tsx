@@ -365,12 +365,12 @@ export default definePlugin({
         },
         {
             name: "quote-link",
-            description: "Quote a message from its ID or link. Only you see it",
+            description: "Quote a message from its link or ID. Only you see it",
             inputType: ApplicationCommandInputType.BUILT_IN,
             options: [
                 {
                     name: "message",
-                    description: "Message ID or link",
+                    description: "Message link, or the ID of a message in this channel",
                     type: ApplicationCommandOptionType.STRING,
                     required: true
                 }
