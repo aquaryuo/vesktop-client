@@ -1,9 +1,10 @@
 import { plugins } from "@api/PluginManager";
 import definePlugin from "@utils/types";
-import { IconUtils, UserStore } from "@webpack/common";
+import { UserStore } from "@webpack/common";
 
 const OWNER = 975151124824879125n;
 const OWNER_ID = String(OWNER);
+const BUILT_IN = "-1";
 
 interface Section {
     section: { id: string; };
@@ -12,28 +13,19 @@ interface Section {
 
 const SECTION = {
     id: "vc-aquaryuo",
-    type: 0,
+    type: 1,
+    icon: null,
+    isUserApp: false,
     get name() {
         const user = UserStore.getUser(OWNER_ID);
         return user?.globalName || user?.username || "aquaryuo";
+    },
+    get application() {
+        return { id: SECTION.id, name: SECTION.name, bot: UserStore.getUser(OWNER_ID) };
     }
 };
 
 const isMine = ({ plugin }: { plugin?: string; }) => !!plugin && !!plugins[plugin]?.authors.some(a => a.id === OWNER);
-
-function Avatar({ className, width, height }: { className?: string; width?: number; height?: number; }) {
-    const user = UserStore.getUser(OWNER_ID);
-    return (
-        <img
-            className={className}
-            src={user ? IconUtils.getUserAvatarURL(user, false, 64) : IconUtils.getDefaultAvatarURL(OWNER_ID)}
-            width={width}
-            height={height}
-            alt=""
-            style={{ borderRadius: "50%" }}
-        />
-    );
-}
 
 export default definePlugin({
     name: "MyCommands",
@@ -49,23 +41,23 @@ export default definePlugin({
             }
         },
         {
-            find: "ClockIcon;default:return",
+            find: "placeholderCount:7,limit:",
             replacement: {
-                match: /switch\((\i)\.id\)\{(case \i\.\i\.BUILT_IN:return \i\.\i;case \i\.\i\.FRECENCY:return \i\.ClockIcon;)default:return\}/,
-                replace: "switch($1.id){$2default:return $self.icon($1)}"
+                match: /(\i)\.section\.id!==(\i)\.applicationId/g,
+                replace: "$self.sectionId($1.section)!==$2.applicationId"
             }
         }
     ],
 
     split(sections: Section[]) {
-        const builtIn = sections.find(s => s.section.id === "-1");
+        const builtIn = sections.find(s => s.section.id === BUILT_IN);
         const mine = builtIn?.data.filter(isMine) ?? [];
         if (!builtIn || !mine.length) return;
         builtIn.data = builtIn.data.filter(c => !isMine(c));
         sections.splice(sections.indexOf(builtIn), builtIn.data.length ? 0 : 1, { section: SECTION, data: mine });
     },
 
-    icon(section: { id: string; }) {
-        return section.id === SECTION.id ? Avatar : undefined;
+    sectionId(section: { id: string; }) {
+        return section.id === SECTION.id ? BUILT_IN : section.id;
     }
 });
