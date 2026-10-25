@@ -229,6 +229,78 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
     );
 }
 
+const busy = new Set<string>();
+
+async function loadBanners(userId: string, guildId: string | undefined, webhook: boolean) {
+    if (webhook) return [undefined, undefined];
+    const profile = await fetchUserProfile(userId, guildId ? { guild_id: guildId } : undefined)
+        .catch(() => { FluxDispatcher.dispatch({ type: "USER_PROFILE_FETCH_FAILURE", userId }); });
+    const serverProfile = guildId ? UserProfileStore.getGuildMemberProfile(userId, guildId) : null;
+    return Promise.all([
+        loadOptional(profile?.banner && IconUtils.getUserBannerURL({ id: userId, banner: profile.banner, canAnimate: false, size: 1024 })),
+        loadOptional(guildId && serverProfile?.banner && IconUtils.getGuildMemberBannerURL({ id: userId, guildId, banner: serverProfile.banner, canAnimate: false, size: 1024 }))
+    ]);
+}
+
+async function makeQuote(ref: string, channelId: string) {
+    const reply = PendingReplyStore.getPendingReply(channelId);
+    if (reply) FluxDispatcher.dispatch({ type: "DELETE_PENDING_REPLY", channelId });
+
+    const [helsea, message] = await Promise.all([helseaAuthor(), ref ? findMessage(ref, channelId) : reply?.message]);
+    if (!message) {
+        sendBotMessage(channelId, { author: helsea, content: ref ? "Couldn't find that message." : "Reply to a message, or give a message ID or link." });
+        return;
+    }
+
+    const emojiRefs: { name: string; id: string; }[] = [];
+    const text = cleanText(message.content, emojiRefs);
+    const stickerItems = message.stickerItems.filter(s => s.format_type !== 3);
+    const attachments = message.attachments.filter(a => a.content_type?.startsWith("image/") && !a.spoiler);
+    if (!text && !stickerItems.length && !attachments.length) {
+        sendBotMessage(channelId, { author: helsea, content: "That message has nothing to quote." });
+        return;
+    }
+
+    const { author } = message;
+    const guildId = ChannelStore.getChannel(message.channel_id)?.guild_id;
+    const member = guildId ? GuildMemberStore.getMember(guildId, author.id) : null;
+    try {
+        const [avatar, serverAvatar, [banner, serverBanner], emojis, stickers, images] = await Promise.all([
+            loadImage(IconUtils.getUserAvatarURL(author, false, 512)),
+            loadOptional(guildId && member?.avatar && IconUtils.getGuildMemberAvatarURLSimple({ guildId, userId: author.id, avatar: member.avatar, size: 512 })),
+            loadBanners(author.id, guildId, !!message.webhookId),
+            Promise.all(emojiRefs.map(async e => ({ name: e.name, image: await loadOptional(IconUtils.getEmojiURL({ id: e.id, animated: false, size: 256 })) }))),
+            loadAll(stickerItems.map(stickerURL)),
+            loadAll(attachments.slice(0, 4).map(imageURL))
+        ]);
+        const id = generateId();
+        quotes.set(id, {
+            content: {
+                avatar,
+                serverAvatar,
+                banner,
+                serverBanner,
+                text,
+                emojis,
+                stickers,
+                images,
+                name: (guildId && GuildMemberStore.getNick(guildId, author.id)) || author.globalName || author.username,
+                username: author.username,
+                quoter: UserStore.getCurrentUser().username
+            },
+            style: {
+                ...Object.fromEntries(TOGGLES.map(([key]) => [key, settings.store[key] === "on" || settings.store[key] === "always"])),
+                font: settings.store.font,
+                effect: settings.store.effect,
+                place: settings.store.place
+            } as QuoteStyle
+        });
+        sendBotMessage(channelId, { id, author: helsea, content: "" });
+    } catch {
+        sendBotMessage(channelId, { author: helsea, content: "Couldn't load the avatar for this quote." });
+    }
+}
+
 export default definePlugin({
     name: "Quote",
     description: "Use /quote while replying to a message, or give it a message ID or link, to make a quote image only you can see.",
@@ -267,69 +339,12 @@ export default definePlugin({
                     required: false
                 }
             ],
-            execute: async (args, { channel }) => {
-                const ref = findOption(args, "message", "").trim();
-                const reply = PendingReplyStore.getPendingReply(channel.id);
-                if (reply) FluxDispatcher.dispatch({ type: "DELETE_PENDING_REPLY", channelId: channel.id });
-
-                const helsea = await helseaAuthor();
-                const message = ref ? await findMessage(ref, channel.id) : reply?.message;
-                if (!message) {
-                    sendBotMessage(channel.id, { author: helsea, content: ref ? "Couldn't find that message." : "Reply to a message, or give a message ID or link." });
-                    return;
-                }
-
-                const emojiRefs: { name: string; id: string; }[] = [];
-                const text = cleanText(message.content, emojiRefs);
-                const stickerItems = message.stickerItems.filter(s => s.format_type !== 3);
-                const attachments = message.attachments.filter(a => a.content_type?.startsWith("image/") && !a.spoiler);
-                if (!text && !stickerItems.length && !attachments.length) {
-                    sendBotMessage(channel.id, { author: helsea, content: "That message has nothing to quote." });
-                    return;
-                }
-
-                const { author } = message;
-                const guildId = ChannelStore.getChannel(message.channel_id)?.guild_id;
-                try {
-                    const id = generateId();
-                    const member = guildId ? GuildMemberStore.getMember(guildId, author.id) : null;
-                    const profile = message.webhookId ? undefined : await fetchUserProfile(author.id, guildId ? { guild_id: guildId } : undefined)
-                        .catch(() => { FluxDispatcher.dispatch({ type: "USER_PROFILE_FETCH_FAILURE", userId: author.id }); });
-                    const serverProfile = guildId ? UserProfileStore.getGuildMemberProfile(author.id, guildId) : null;
-                    const [avatar, serverAvatar, banner, serverBanner, emojis, stickers, images] = await Promise.all([
-                        loadImage(IconUtils.getUserAvatarURL(author, false, 512)),
-                        loadOptional(guildId && member?.avatar && IconUtils.getGuildMemberAvatarURLSimple({ guildId, userId: author.id, avatar: member.avatar, size: 512 })),
-                        loadOptional(profile?.banner && IconUtils.getUserBannerURL({ id: author.id, banner: profile.banner, canAnimate: false, size: 1024 })),
-                        loadOptional(guildId && serverProfile?.banner && IconUtils.getGuildMemberBannerURL({ id: author.id, guildId, banner: serverProfile.banner, canAnimate: false, size: 1024 })),
-                        Promise.all(emojiRefs.map(async e => ({ name: e.name, image: await loadOptional(IconUtils.getEmojiURL({ id: e.id, animated: false, size: 256 })) }))),
-                        loadAll(stickerItems.map(stickerURL)),
-                        loadAll(attachments.slice(0, 4).map(imageURL))
-                    ]);
-                    quotes.set(id, {
-                        content: {
-                            avatar,
-                            serverAvatar,
-                            banner,
-                            serverBanner,
-                            text,
-                            emojis,
-                            stickers,
-                            images,
-                            name: (guildId && GuildMemberStore.getNick(guildId, author.id)) || author.globalName || author.username,
-                            username: author.username,
-                            quoter: UserStore.getCurrentUser().username
-                        },
-                        style: {
-                            ...Object.fromEntries(TOGGLES.map(([key]) => [key, settings.store[key] === "on" || settings.store[key] === "always"])),
-                            font: settings.store.font,
-                            effect: settings.store.effect,
-                            place: settings.store.place
-                        } as QuoteStyle
-                    });
-                    sendBotMessage(channel.id, { id, author: helsea, content: "" });
-                } catch {
-                    sendBotMessage(channel.id, { author: helsea, content: "Couldn't load the avatar for this quote." });
-                }
+            execute: (args, { channel }) => {
+                if (busy.has(channel.id)) return;
+                busy.add(channel.id);
+                makeQuote(findOption(args, "message", "").trim(), channel.id)
+                    .catch(() => sendBotMessage(channel.id, { content: "Couldn't make that quote." }))
+                    .finally(() => busy.delete(channel.id));
             }
         }
     ]
