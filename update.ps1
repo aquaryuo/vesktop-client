@@ -25,6 +25,9 @@ try {
     Pop-Location
 }
 
+$pkg = Join-Path $vencord "dist\package.json"
+if (-not (Test-Path $pkg)) { Set-Content -Path $pkg -Value "{}" -Encoding ascii }
+
 foreach ($name in "node_modules", "packages") {
     $path = Join-Path $PSScriptRoot $name
     if (-not (Test-Path $path)) {
