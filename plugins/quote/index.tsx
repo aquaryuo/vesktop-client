@@ -6,7 +6,7 @@ import definePlugin from "@utils/types";
 import type { Message } from "@vencord/discord-types";
 import { ChannelStore, Constants, FluxDispatcher, GuildMemberStore, IconUtils, MessageStore, PendingReplyStore, RestAPI, showToast, UploadHandler, UserProfileStore, UserStore, UserUtils, useEffect, useRef, useState } from "@webpack/common";
 
-import { EFFECTS, FONTS, loadFonts, QuoteContent, QuoteStyle, renderQuote, unloadFonts } from "./draw";
+import { EFFECTS, EMOJI_BASE, FONTS, loadFonts, PLACES, QuoteContent, QuoteStyle, renderQuote, unloadFonts } from "./draw";
 import managedStyle from "./styles.css?managed";
 
 interface Quote {
@@ -33,6 +33,10 @@ const TOGGLES: [keyof QuoteStyle, string, string | { d: string; }][] = [
     ["bold", "Bold", "B"],
     ["italic", "Italic", "I"],
     ["vertical", "Tall layout", "NEW"],
+    ["emojis", "Custom emojis", { d: "M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01" }],
+    ["stickers", "Stickers", { d: "M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3zM15 3v4a2 2 0 0 0 2 2h4M8 13h.01M16 13h.01M10 16s.8 1 2 1c1.3 0 2-1 2-1" }],
+    ["images", "Images", { d: "M18 22H4a2 2 0 0 1-2-2V6M22 13l-1.296-1.296a2.41 2.41 0 0 0-3.408 0L11 18M10 8a2 2 0 1 0 4 0a2 2 0 1 0-4 0M8 2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" }],
+    ["credit", "Quoted by", { d: "M12 20h9M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z" }],
 ];
 
 async function findMessage(ref: string, channelId: string): Promise<Message | undefined> {
@@ -53,9 +57,14 @@ async function findMessage(ref: string, channelId: string): Promise<Message | un
     return MessageStore.getMessages(raw.channel_id).receiveMessage(raw).get(raw.id);
 }
 
-function cleanText(content: string) {
+function cleanText(content: string, emojis: { name: string; id: string; }[]) {
     return content
-        .replace(/<a?:(\w+):\d+>/g, ":$1:")
+        .replace(/[\uE000-\uF8FF]/g, "")
+        .replace(/<a?:(\w+):(\d+)>/g, (_, name, id) => {
+            let i = emojis.findIndex(e => e.id === id);
+            if (i < 0) i = emojis.push({ name, id }) - 1;
+            return String.fromCharCode(EMOJI_BASE + i);
+        })
         .replace(/<@!?(\d+)>/g, (_, id) => "@" + (UserStore.getUser(id)?.username ?? "unknown"))
         .replace(/<#(\d+)>/g, (_, id) => "#" + (ChannelStore.getChannel(id)?.name ?? "channel"))
         .replace(/<@&\d+>/g, "@role")
@@ -70,6 +79,25 @@ async function loadImage(url: string) {
 
 function loadOptional(url: string | false | null | undefined) {
     return url ? loadImage(url).catch(() => undefined) : undefined;
+}
+
+async function loadAll(urls: (string | undefined)[]) {
+    const images = await Promise.all(urls.map(loadOptional));
+    return images.filter((i): i is ImageBitmap => i !== undefined);
+}
+
+function stickerURL({ id, format_type }: Message["stickerItems"][number]) {
+    if (format_type === 3) return;
+    return `https:${window.GLOBAL_ENV.MEDIA_PROXY_ENDPOINT}/stickers/${id}.${format_type === 4 ? "gif" : "png"}?size=320`;
+}
+
+function imageURL({ proxy_url, width, height }: Message["attachments"][number]) {
+    if (!width || !height) return proxy_url;
+    const scale = Math.min(1, 1024 / Math.max(width, height));
+    const url = new URL(proxy_url);
+    url.searchParams.set("width", String(Math.round(width * scale)));
+    url.searchParams.set("height", String(Math.round(height * scale)));
+    return url.href;
 }
 
 function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
@@ -98,8 +126,14 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
         if (blob.current && channel) UploadHandler.promptToUpload([new File([blob.current], "quote.png", { type: "image/png" })], channel, 0);
     };
 
-    const { serverAvatar, banner, serverBanner } = quote.content;
-    const hidden: Partial<Record<keyof QuoteStyle, boolean>> = { server: !serverAvatar && !serverBanner, banner: !banner && !serverBanner };
+    const { serverAvatar, banner, serverBanner, emojis, stickers, images } = quote.content;
+    const hidden: Partial<Record<keyof QuoteStyle, boolean>> = {
+        server: !serverAvatar && !serverBanner,
+        banner: !banner && !serverBanner,
+        emojis: !emojis.some(e => e.image),
+        stickers: !stickers.length,
+        images: !images.length
+    };
 
     const copy = () => {
         if (!blob.current) return;
@@ -145,6 +179,14 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
                         {EFFECTS.map(fx => <option key={fx.alias} value={fx.alias}>{fx.name}</option>)}
                     </select>
                 )}
+                <select
+                    className="vc-quote-select"
+                    aria-label="Name position"
+                    value={style.place}
+                    onChange={e => setStyle({ ...style, place: e.currentTarget.value })}
+                >
+                    {PLACES.map(p => <option key={p.alias} value={p.alias}>{p.name}</option>)}
+                </select>
                 <button type="button" className="vc-quote-button vc-quote-primary" onClick={send}>Send</button>
                 <button type="button" className="vc-quote-button" onClick={copy}>Copy</button>
             </div>
@@ -209,9 +251,12 @@ export default definePlugin({
                     return;
                 }
 
-                const text = cleanText(message.content);
-                if (!text) {
-                    sendBotMessage(channel.id, { author: helsea, content: "That message has no text to quote." });
+                const emojiRefs: { name: string; id: string; }[] = [];
+                const text = cleanText(message.content, emojiRefs);
+                const stickerItems = message.stickerItems.filter(s => s.format_type !== 3);
+                const attachments = message.attachments.filter(a => a.content_type?.startsWith("image/") && !a.spoiler);
+                if (!text && !stickerItems.length && !attachments.length) {
+                    sendBotMessage(channel.id, { author: helsea, content: "That message has nothing to quote." });
                     return;
                 }
 
@@ -223,11 +268,14 @@ export default definePlugin({
                     const profile = message.webhookId ? undefined : await fetchUserProfile(author.id, guildId ? { guild_id: guildId } : undefined)
                         .catch(() => { FluxDispatcher.dispatch({ type: "USER_PROFILE_FETCH_FAILURE", userId: author.id }); });
                     const serverProfile = guildId ? UserProfileStore.getGuildMemberProfile(author.id, guildId) : null;
-                    const [avatar, serverAvatar, banner, serverBanner] = await Promise.all([
+                    const [avatar, serverAvatar, banner, serverBanner, emojis, stickers, images] = await Promise.all([
                         loadImage(IconUtils.getUserAvatarURL(author, false, 512)),
                         loadOptional(guildId && member?.avatar && IconUtils.getGuildMemberAvatarURLSimple({ guildId, userId: author.id, avatar: member.avatar, size: 512 })),
                         loadOptional(profile?.banner && IconUtils.getUserBannerURL({ id: author.id, banner: profile.banner, canAnimate: false, size: 1024 })),
-                        loadOptional(guildId && serverProfile?.banner && IconUtils.getGuildMemberBannerURL({ id: author.id, guildId, banner: serverProfile.banner, canAnimate: false, size: 1024 }))
+                        loadOptional(guildId && serverProfile?.banner && IconUtils.getGuildMemberBannerURL({ id: author.id, guildId, banner: serverProfile.banner, canAnimate: false, size: 1024 })),
+                        Promise.all(emojiRefs.map(async e => ({ name: e.name, image: await loadOptional(IconUtils.getEmojiURL({ id: e.id, animated: false, size: 96 })) }))),
+                        loadAll(stickerItems.map(stickerURL)),
+                        loadAll(attachments.slice(0, 4).map(imageURL))
                     ]);
                     quotes.set(id, {
                         content: {
@@ -236,10 +284,30 @@ export default definePlugin({
                             banner,
                             serverBanner,
                             text,
+                            emojis,
+                            stickers,
+                            images,
                             name: (guildId && GuildMemberStore.getNick(guildId, author.id)) || author.globalName || author.username,
-                            username: author.username
+                            username: author.username,
+                            quoter: UserStore.getCurrentUser().username
                         },
-                        style: { font: findOption(args, "font", "mplus"), bold: false, italic: false, light: false, color: false, flip: false, vertical: false, server: false, banner: false, effect: "glass" }
+                        style: {
+                            font: findOption(args, "font", "mplus"),
+                            bold: false,
+                            italic: false,
+                            light: false,
+                            color: false,
+                            flip: false,
+                            vertical: false,
+                            server: false,
+                            banner: false,
+                            effect: "glass",
+                            emojis: false,
+                            stickers: !text,
+                            images: !text,
+                            credit: false,
+                            place: "below"
+                        }
                     });
                     sendBotMessage(channel.id, { id, author: helsea, content: "" });
                 } catch {

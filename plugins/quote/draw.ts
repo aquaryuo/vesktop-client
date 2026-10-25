@@ -25,6 +25,15 @@ export const EFFECTS = [
     { alias: "mono", name: "Mono", filter: "grayscale(1)", tint: 0.55 },
 ];
 
+export const PLACES = [
+    { alias: "below", name: "Name below quote" },
+    { alias: "top", name: "Name at top" },
+    { alias: "bottom", name: "Name at bottom" },
+];
+
+export const EMOJI_BASE = 0xE000;
+const EMOJI = /[\uE000-\uF8FF]/g;
+
 export interface QuoteStyle {
     font: string;
     bold: boolean;
@@ -36,6 +45,11 @@ export interface QuoteStyle {
     server: boolean;
     banner: boolean;
     effect: string;
+    emojis: boolean;
+    stickers: boolean;
+    images: boolean;
+    credit: boolean;
+    place: string;
 }
 
 export interface QuoteContent {
@@ -44,8 +58,12 @@ export interface QuoteContent {
     banner?: ImageBitmap;
     serverBanner?: ImageBitmap;
     text: string;
+    emojis: { name: string; image?: ImageBitmap; }[];
+    stickers: ImageBitmap[];
+    images: ImageBitmap[];
     name: string;
     username: string;
+    quoter: string;
 }
 
 const FONTS_URL = "https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600&" + FONTS
@@ -79,8 +97,8 @@ function cover(ctx: CanvasRenderingContext2D, image: ImageBitmap, x: number, y: 
     ctx.drawImage(image, x + (w - image.width * scale) / 2, y + (h - image.height * scale) / 2, image.width * scale, image.height * scale);
 }
 
-function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
-    const fits = (s: string) => ctx.measureText(s).width <= maxWidth;
+function wrap(text: string, maxWidth: number, measure: (s: string) => number) {
+    const fits = (s: string) => measure(s) <= maxWidth;
     const lines: string[] = [];
     for (const paragraph of text.split("\n")) {
         let line = "";
@@ -115,8 +133,14 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
     const fg = style.light ? "#000000" : "#ffffff";
     const sub = banner ? fg + "b8" : style.light ? "#6b6b6b" : "#8a8a8a";
 
+    const text = content.text.replace(EMOJI, c => {
+        const emoji = content.emojis[c.charCodeAt(0) - EMOJI_BASE];
+        return style.emojis && emoji.image ? c : `:${emoji.name}:`;
+    }).trim();
+    const credit = "Quoted by @" + content.quoter;
+
     await loadFonts();
-    const sample = content.text + content.name + content.username + "“”-@";
+    const sample = text + content.name + content.username + credit + "“”-";
     await Promise.all([
         document.fonts.load(fontSpec(family, 40, style.bold, style.italic), sample),
         document.fonts.load(fontSpec(family, 40, false, true), sample)
@@ -179,30 +203,42 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
         ctx.stroke();
     }
     const pad = 48;
-    const maxWidth = area.w - pad * 2;
+    const gap = 24;
+    const inner = { x: area.x + pad, y: area.y + pad, w: area.w - pad * 2, h: area.h - pad * 2 };
     const nameSize = style.vertical ? 30 : 28;
     const userSize = style.vertical ? 20 : 18;
     const marksSize = 56;
-    const footer = (style.vertical ? 32 : 0) + nameSize * 1.4 + userSize * 1.4;
+    const rule = style.vertical ? 32 : 0;
+    const footer = rule + nameSize * 1.4 + userSize * 1.4 * (style.credit ? 2 : 1);
     const header = style.vertical ? marksSize * 1.2 : 0;
-    const maxTextHeight = area.h - pad * 2 - footer - header - 24;
+    const room = inner.h - footer - gap - header;
+
+    const media = [...style.stickers ? content.stickers : [], ...style.images ? content.images : []];
+    const ratio = media.reduce((sum, m) => sum + m.width / m.height, 0);
+    const mediaHeight = media.length ? Math.min(text ? room * 0.5 : room, (inner.w - gap * (media.length - 1)) / ratio) : 0;
+    const textRoom = room - mediaHeight - (text && media.length ? gap : 0);
 
     let size = style.vertical ? 56 : 52;
-    let lines: string[];
-    for (; ; size -= 2) {
+    const measure = (s: string) => ctx.measureText(s.replace(EMOJI, "")).width + (s.match(EMOJI)?.length ?? 0) * size * 1.2;
+    let lines: string[] = [];
+    while (text) {
         ctx.font = fontSpec(family, size, style.bold, style.italic);
-        lines = wrap(ctx, content.text, maxWidth);
-        if (lines.length * size * 1.3 <= maxTextHeight || size <= 18) break;
+        lines = wrap(text, inner.w, measure);
+        if (lines.length * size * 1.3 <= textRoom || size <= 18) break;
+        size -= 2;
     }
-    const maxLines = Math.max(1, Math.floor(maxTextHeight / (size * 1.3)));
+    const maxLines = Math.max(1, Math.floor(textRoom / (size * 1.3)));
     if (lines.length > maxLines) {
         lines = lines.slice(0, maxLines);
         lines[maxLines - 1] = lines[maxLines - 1].replace(/.?$/u, "…");
     }
 
-    const textHeight = lines.length * size * 1.3;
+    const body = header + lines.length * size * 1.3 + (text && media.length ? gap : 0) + mediaHeight;
+    const top = style.place === "top" ? inner.y + footer + gap : inner.y;
+    const bottom = style.place === "top" ? inner.y + inner.h : inner.y + inner.h - footer - gap;
+    const start = Math.max(top, Math.min(inner.y + (inner.h - body) / 2, bottom - body));
     const centerX = area.x + area.w / 2;
-    let y = area.y + (area.h - (header + textHeight + 24 + footer)) / 2;
+    let y = start;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     ctx.fillStyle = fg;
@@ -218,23 +254,45 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
     }
 
     ctx.font = fontSpec(family, size, style.bold, style.italic);
+    ctx.textAlign = "left";
     for (const line of lines) {
-        ctx.fillText(line, centerX, y + size * 0.15);
+        let x = centerX - measure(line) / 2;
+        line.split(/([\uE000-\uF8FF])/).forEach((part, i) => {
+            if (i % 2) {
+                ctx.drawImage(content.emojis[part.charCodeAt(0) - EMOJI_BASE].image!, x + size * 0.05, y + size * 0.1, size * 1.1, size * 1.1);
+                x += size * 1.2;
+            } else {
+                ctx.fillText(part, x, y + size * 0.15);
+                x += ctx.measureText(part).width;
+            }
+        });
         y += size * 1.3;
     }
-    y += 24;
+    ctx.textAlign = "center";
 
-    if (style.vertical) {
-        ctx.fillRect(centerX - width * 0.22, y, width * 0.44, 2);
-        y += 32;
+    if (text && media.length) y += gap;
+    let mediaX = centerX - (mediaHeight * ratio + gap * (media.length - 1)) / 2;
+    for (const m of media) {
+        const w = mediaHeight * m.width / m.height;
+        ctx.drawImage(m, mediaX, y, w, mediaHeight);
+        mediaX += w + gap;
     }
 
+    let fy = style.place === "top" ? inner.y : style.place === "bottom" ? inner.y + inner.h - footer : start + body + gap;
+    if (rule && style.place !== "top") {
+        ctx.fillRect(centerX - width * 0.22, fy, width * 0.44, 2);
+        fy += rule;
+    }
+    if (rule && style.place === "top") ctx.fillRect(centerX - width * 0.22, inner.y + footer - 2, width * 0.44, 2);
+
     ctx.font = fontSpec(family, nameSize, false, true);
-    ctx.fillText("- " + content.name, centerX, y);
-    y += nameSize * 1.4;
+    ctx.fillText("- " + content.name, centerX, fy);
+    fy += nameSize * 1.4;
     ctx.fillStyle = sub;
     ctx.font = fontSpec(family, userSize, false, false);
-    ctx.fillText("@" + content.username, centerX, y);
+    ctx.fillText("@" + content.username, centerX, fy);
+    fy += userSize * 1.4;
+    if (style.credit) ctx.fillText(credit, centerX, fy);
 
     return new Promise((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error("Quote render failed")), "image/png"));
 }
