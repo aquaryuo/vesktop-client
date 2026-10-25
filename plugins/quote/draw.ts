@@ -18,6 +18,13 @@ export const FONTS = [
     { alias: "script", family: "Dancing Script", axes: "wght@400;700" },
 ];
 
+export const EFFECTS = [
+    { alias: "glass", name: "Glass", filter: "none", tint: 0.25 },
+    { alias: "blur", name: "Blur", filter: "blur(24px)", tint: 0.5 },
+    { alias: "dim", name: "Dim", filter: "none", tint: 0.6 },
+    { alias: "mono", name: "Mono", filter: "grayscale(1)", tint: 0.55 },
+];
+
 export interface QuoteStyle {
     font: string;
     bold: boolean;
@@ -26,10 +33,16 @@ export interface QuoteStyle {
     color: boolean;
     flip: boolean;
     vertical: boolean;
+    server: boolean;
+    banner: boolean;
+    effect: string;
 }
 
 export interface QuoteContent {
-    avatar: CanvasImageSource;
+    avatar: ImageBitmap;
+    serverAvatar?: ImageBitmap;
+    banner?: ImageBitmap;
+    serverBanner?: ImageBitmap;
     text: string;
     name: string;
     username: string;
@@ -61,6 +74,11 @@ function fontSpec(family: string, size: number, bold: boolean, italic: boolean) 
     return `${italic ? "italic " : ""}${bold ? 700 : 400} ${size}px "${family}", "M PLUS Rounded 1c", sans-serif`;
 }
 
+function cover(ctx: CanvasRenderingContext2D, image: ImageBitmap, x: number, y: number, w: number, h: number) {
+    const scale = Math.max(w / image.width, h / image.height);
+    ctx.drawImage(image, x + (w - image.width * scale) / 2, y + (h - image.height * scale) / 2, image.width * scale, image.height * scale);
+}
+
 function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
     const fits = (s: string) => ctx.measureText(s).width <= maxWidth;
     const lines: string[] = [];
@@ -90,9 +108,12 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
     const family = (FONTS.find(f => f.alias === style.font) ?? FONTS[0]).family;
     const [width, height] = style.vertical ? [720, 1280] : [1200, 630];
     const side = style.vertical ? width : height;
+    const avatar = style.server && content.serverAvatar || content.avatar;
+    const banner = style.banner ? style.server && content.serverBanner || content.banner : undefined;
+    const effect = EFFECTS.find(e => e.alias === style.effect) ?? EFFECTS[0];
     const bg = style.light ? "#ffffff" : "#000000";
     const fg = style.light ? "#000000" : "#ffffff";
-    const sub = style.light ? "#6b6b6b" : "#8a8a8a";
+    const sub = banner ? fg + "b8" : style.light ? "#6b6b6b" : "#8a8a8a";
 
     await loadFonts();
     const sample = content.text + content.name + content.username + "“”-@";
@@ -107,29 +128,56 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
     const ctx = canvas.getContext("2d")!;
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, width, height);
+    if (banner) {
+        ctx.filter = effect.filter;
+        cover(ctx, banner, -48, -48, width + 96, height + 96);
+        ctx.filter = "none";
+        ctx.globalAlpha = effect.tint;
+        ctx.fillRect(0, 0, width, height);
+        ctx.globalAlpha = 1;
+    }
 
     const avatarX = style.vertical ? 0 : style.flip ? width - side : 0;
     const avatarY = style.vertical && style.flip ? height - side : 0;
-    ctx.filter = style.color ? "none" : "grayscale(1)";
-    ctx.drawImage(content.avatar, avatarX, avatarY, side, side);
-    ctx.filter = "none";
-
     const fadeStart = side * 0.45;
-    const gradient = style.vertical
+    const layer = document.createElement("canvas");
+    layer.width = layer.height = side;
+    const layerCtx = layer.getContext("2d")!;
+    layerCtx.filter = style.color ? "none" : "grayscale(1)";
+    layerCtx.drawImage(avatar, 0, 0, side, side);
+    layerCtx.filter = "none";
+    const fade = style.vertical
         ? style.flip
-            ? ctx.createLinearGradient(0, avatarY + side - fadeStart, 0, avatarY)
-            : ctx.createLinearGradient(0, fadeStart, 0, side)
+            ? layerCtx.createLinearGradient(0, side - fadeStart, 0, 0)
+            : layerCtx.createLinearGradient(0, fadeStart, 0, side)
         : style.flip
-            ? ctx.createLinearGradient(avatarX + side - fadeStart, 0, avatarX, 0)
-            : ctx.createLinearGradient(fadeStart, 0, side, 0);
-    gradient.addColorStop(0, bg + "00");
-    gradient.addColorStop(1, bg);
-    ctx.fillStyle = gradient;
-    ctx.fillRect(avatarX, avatarY, side, side);
+            ? layerCtx.createLinearGradient(side - fadeStart, 0, 0, 0)
+            : layerCtx.createLinearGradient(fadeStart, 0, side, 0);
+    fade.addColorStop(0, "#000000");
+    fade.addColorStop(1, "#00000000");
+    layerCtx.globalCompositeOperation = "destination-in";
+    layerCtx.fillStyle = fade;
+    layerCtx.fillRect(0, 0, side, side);
+    ctx.drawImage(layer, avatarX, avatarY);
 
     const area = style.vertical
         ? { x: 0, y: style.flip ? 0 : side, w: width, h: height - side }
         : { x: style.flip ? 0 : side, y: 0, w: width - side, h: height };
+
+    if (banner && effect.alias === "glass") {
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(area.x + 24, area.y + 24, area.w - 48, area.h - 48, 24);
+        ctx.clip();
+        ctx.filter = "blur(24px)";
+        cover(ctx, banner, -48, -48, width + 96, height + 96);
+        ctx.filter = "none";
+        ctx.globalAlpha = 0.45;
+        ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+        ctx.strokeStyle = fg + "2e";
+        ctx.stroke();
+    }
     const pad = 48;
     const maxWidth = area.w - pad * 2;
     const nameSize = style.vertical ? 30 : 28;
@@ -158,6 +206,10 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     ctx.fillStyle = fg;
+    if (banner) {
+        ctx.shadowColor = bg + "99";
+        ctx.shadowBlur = 16;
+    }
 
     if (style.vertical) {
         ctx.font = fontSpec(family, marksSize, true, true);

@@ -1,11 +1,12 @@
 import { ApplicationCommandInputType, ApplicationCommandOptionType, findOption, generateId, sendBotMessage } from "@api/Commands";
 import ErrorBoundary from "@components/ErrorBoundary";
+import { fetchUserProfile } from "@utils/discord";
 import { classes } from "@utils/misc";
 import definePlugin from "@utils/types";
 import type { Message } from "@vencord/discord-types";
-import { ChannelStore, Constants, FluxDispatcher, GuildMemberStore, IconUtils, MessageStore, PendingReplyStore, RestAPI, showToast, UploadHandler, UserStore, UserUtils, useEffect, useRef, useState } from "@webpack/common";
+import { ChannelStore, Constants, FluxDispatcher, GuildMemberStore, IconUtils, MessageStore, PendingReplyStore, RestAPI, showToast, UploadHandler, UserProfileStore, UserStore, UserUtils, useEffect, useRef, useState } from "@webpack/common";
 
-import { FONTS, loadFonts, QuoteContent, QuoteStyle, renderQuote, unloadFonts } from "./draw";
+import { EFFECTS, FONTS, loadFonts, QuoteContent, QuoteStyle, renderQuote, unloadFonts } from "./draw";
 import managedStyle from "./styles.css?managed";
 
 interface Quote {
@@ -25,7 +26,9 @@ async function helseaAuthor() {
 
 const TOGGLES: [keyof QuoteStyle, string, string | { d: string; }][] = [
     ["light", "Light background", { d: "M8 12a4 4 0 1 0 8 0a4 4 0 1 0-8 0M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" }],
+    ["banner", "Banner background", { d: "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM7 9a2 2 0 1 0 4 0a2 2 0 1 0-4 0M21 15l-3.086-3.086a2 2 0 0 0-2.828 0L6 21" }],
     ["color", "Colour avatar", { d: "M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2zM13.5 6.5h.01M17.5 10.5h.01M8.5 7.5h.01M6.5 12.5h.01" }],
+    ["server", "Server profile", { d: "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM7 21v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2M9 10a3 3 0 1 0 6 0a3 3 0 1 0-6 0" }],
     ["flip", "Swap sides", { d: "m17 2 4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3" }],
     ["bold", "Bold", "B"],
     ["italic", "Italic", "I"],
@@ -59,10 +62,14 @@ function cleanText(content: string) {
         .trim();
 }
 
-async function loadAvatar(url: string) {
+async function loadImage(url: string) {
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`Avatar request failed with ${res.status}`);
+    if (!res.ok) throw new Error(`Image request failed with ${res.status}`);
     return createImageBitmap(await res.blob());
+}
+
+function loadOptional(url: string | false | null | undefined) {
+    return url ? loadImage(url).catch(() => undefined) : undefined;
 }
 
 function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
@@ -91,6 +98,9 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
         if (blob.current && channel) UploadHandler.promptToUpload([new File([blob.current], "quote.png", { type: "image/png" })], channel, 0);
     };
 
+    const { serverAvatar, banner, serverBanner } = quote.content;
+    const hidden: Partial<Record<keyof QuoteStyle, boolean>> = { server: !serverAvatar && !serverBanner, banner: !banner && !serverBanner };
+
     const copy = () => {
         if (!blob.current) return;
         navigator.clipboard.write([new ClipboardItem({ "image/png": blob.current })])
@@ -102,7 +112,7 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
         <div className={classes("vc-quote", style.vertical && "vc-quote-vertical")}>
             {url && <img className="vc-quote-image" src={url} alt={`Quote of ${quote.content.name}: ${quote.content.text}`} />}
             <div className="vc-quote-toggles">
-                {TOGGLES.map(([key, title, label]) => (
+                {TOGGLES.filter(([key]) => !hidden[key]).map(([key, title, label]) => (
                     <button
                         key={key}
                         type="button"
@@ -125,6 +135,16 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
                 >
                     {FONTS.map(f => <option key={f.alias} value={f.alias}>{`${f.family} (${f.alias})`}</option>)}
                 </select>
+                {style.banner && (
+                    <select
+                        className="vc-quote-select"
+                        aria-label="Banner effect"
+                        value={style.effect}
+                        onChange={e => setStyle({ ...style, effect: e.currentTarget.value })}
+                    >
+                        {EFFECTS.map(fx => <option key={fx.alias} value={fx.alias}>{fx.name}</option>)}
+                    </select>
+                )}
                 <button type="button" className="vc-quote-button vc-quote-primary" onClick={send}>Send</button>
                 <button type="button" className="vc-quote-button" onClick={copy}>Copy</button>
             </div>
@@ -199,14 +219,27 @@ export default definePlugin({
                 const guildId = ChannelStore.getChannel(message.channel_id)?.guild_id;
                 try {
                     const id = generateId();
+                    const member = guildId ? GuildMemberStore.getMember(guildId, author.id) : null;
+                    const profile = message.webhookId ? undefined : await fetchUserProfile(author.id, guildId ? { guild_id: guildId } : undefined)
+                        .catch(() => { FluxDispatcher.dispatch({ type: "USER_PROFILE_FETCH_FAILURE", userId: author.id }); });
+                    const serverProfile = guildId ? UserProfileStore.getGuildMemberProfile(author.id, guildId) : null;
+                    const [avatar, serverAvatar, banner, serverBanner] = await Promise.all([
+                        loadImage(IconUtils.getUserAvatarURL(author, false, 512)),
+                        loadOptional(guildId && member?.avatar && IconUtils.getGuildMemberAvatarURLSimple({ guildId, userId: author.id, avatar: member.avatar, size: 512 })),
+                        loadOptional(profile?.banner && IconUtils.getUserBannerURL({ id: author.id, banner: profile.banner, canAnimate: false, size: 1024 })),
+                        loadOptional(guildId && serverProfile?.banner && IconUtils.getGuildMemberBannerURL({ id: author.id, guildId, banner: serverProfile.banner, canAnimate: false, size: 1024 }))
+                    ]);
                     quotes.set(id, {
                         content: {
-                            avatar: await loadAvatar(IconUtils.getUserAvatarURL(author, false, 512)),
+                            avatar,
+                            serverAvatar,
+                            banner,
+                            serverBanner,
                             text,
                             name: (guildId && GuildMemberStore.getNick(guildId, author.id)) || author.globalName || author.username,
                             username: author.username
                         },
-                        style: { font: findOption(args, "font", "mplus"), bold: false, italic: false, light: false, color: false, flip: false, vertical: false }
+                        style: { font: findOption(args, "font", "mplus"), bold: false, italic: false, light: false, color: false, flip: false, vertical: false, server: false, banner: false, effect: "glass" }
                     });
                     sendBotMessage(channel.id, { id, author: helsea, content: "" });
                 } catch {
