@@ -25,7 +25,7 @@ const messageContextMenuPatch: NavContextMenuPatchCallback = (children, { messag
 export default definePlugin({
     name: "FakePing",
     description: "Right-click a message and pick Fake Ping to highlight it like a ping. Only you see it.",
-    authors: [{ name: "aquaryuo", id: 0n }],
+    authors: [{ name: "aquaryuo", id: 975151124824879125n }],
     contextMenus: {
         "message": messageContextMenuPatch
     },

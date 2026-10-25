@@ -18,7 +18,7 @@ Needs git and Node 22 or newer. pnpm runs through corepack, so it doesn't need a
 
 ## Writing a plugin
 
-1. Copy `plugins/myPlugin` to a new folder and rename it.
+1. Copy `plugins/_template` to a new folder whose name doesn't start with `_`. The build skips folders that start with `_` or `.`.
 2. Run `corepack pnpm watch` inside `vencord/`. It rebuilds on every save.
 3. Press Ctrl+R in Vesktop to reload.
 4. Typecheck with `node vencord\node_modules\typescript\bin\tsc -p tsconfig.json --noEmit` from the repo root.
