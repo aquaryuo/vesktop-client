@@ -183,7 +183,7 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
 
     const { serverAvatar, banner, serverBanner, emojis, stickers, images } = quote.content;
     const missing: Partial<Record<keyof QuoteStyle, boolean>> = {
-        server: !serverAvatar && !serverBanner,
+        server: !serverAvatar && !(serverBanner && style.banner),
         banner: !banner && !serverBanner,
         emojis: !emojis.some(e => e.image),
         stickers: !stickers.length,
