@@ -25,6 +25,14 @@ const SECTION = {
     }
 };
 
+const BROWSER_ROW = Object.create(SECTION);
+
+interface Row {
+    command?: { plugin?: string; };
+    section?: unknown;
+    showImage?: boolean;
+}
+
 const isMine = ({ plugin }: { plugin?: string; }) => !!plugin && !!plugins[plugin]?.authors.some(a => a.id === OWNER);
 
 export default definePlugin({
@@ -42,9 +50,22 @@ export default definePlugin({
         },
         {
             find: "placeholderCount:7,limit:",
+            replacement: [
+                {
+                    match: /(\i)\.section\.id!==(\i)\.applicationId/g,
+                    replace: "$self.sectionId($1.section)!==$2.applicationId"
+                },
+                {
+                    match: /(command:(\i),[^}]{0,200}?showImage:[^,]+,section:)(\i)/,
+                    replace: "$1$self.rowSection($2,$3)"
+                }
+            ]
+        },
+        {
+            find: "#{intl::COMMANDS_OPTIONAL_COUNT}",
             replacement: {
-                match: /(\i)\.section\.id!==(\i)\.applicationId/g,
-                replace: "$self.sectionId($1.section)!==$2.applicationId"
+                match: /(\{command:\i,activeOptionName:\i,[^}]*\}=)(\i)(?=,)/,
+                replace: "$1$self.rowProps($2)"
             }
         }
     ],
@@ -59,5 +80,14 @@ export default definePlugin({
 
     sectionId(section: { id: string; }) {
         return section.id === SECTION.id ? BUILT_IN : section.id;
+    },
+
+    rowSection(command: { plugin?: string; }, section: unknown) {
+        return isMine(command) ? BROWSER_ROW : section;
+    },
+
+    rowProps(props: Row) {
+        if (!props.command || !isMine(props.command)) return props;
+        return props.section === BROWSER_ROW ? { ...props, section: SECTION } : { ...props, showImage: true, section: SECTION };
     }
 });
