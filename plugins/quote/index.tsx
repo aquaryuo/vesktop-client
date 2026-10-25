@@ -5,6 +5,7 @@ import { fetchUserProfile } from "@utils/discord";
 import { classes } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import type { Message } from "@vencord/discord-types";
+import { findByCodeLazy } from "@webpack";
 import { ChannelStore, Constants, FluxDispatcher, GuildMemberStore, IconUtils, MessageStore, PendingReplyStore, React, RestAPI, showToast, UploadHandler, UserProfileStore, UserStore, UserUtils, useEffect, useRef, useState } from "@webpack/common";
 
 import { EFFECTS, EMOJI_BASE, FONTS, loadFonts, PLACES, QuoteContent, QuoteStyle, renderQuote, unloadFonts } from "./draw";
@@ -16,6 +17,8 @@ interface Quote {
 }
 
 const quotes = new Map<string, Quote>();
+
+const createMessageRecord: (raw: any) => Message = findByCodeLazy(".createFromServer(", ".isBlockedForMessage", "messageReference:");
 
 const HELSEA_ID = "1519828760436936704";
 
@@ -87,7 +90,7 @@ async function findMessage(ref: string, channelId: string): Promise<Message | un
     }).catch(() => null);
     const raw = res?.body?.[0];
     if (raw?.id !== mid) return;
-    return MessageStore.getMessages(raw.channel_id).receiveMessage(raw).get(raw.id);
+    return createMessageRecord(raw);
 }
 
 function cleanText(content: string, emojis: { name: string; id: string; }[]) {
@@ -262,13 +265,6 @@ export default definePlugin({
                     description: "Message ID or link. Leave empty to quote the message you're replying to",
                     type: ApplicationCommandOptionType.STRING,
                     required: false
-                },
-                {
-                    name: "font",
-                    description: "Font for the quote",
-                    type: ApplicationCommandOptionType.STRING,
-                    required: false,
-                    choices: FONTS.map(f => ({ name: f.alias, label: `${f.family} (${f.alias})`, value: f.alias, displayName: `${f.family} (${f.alias})` }))
                 }
             ],
             execute: async (args, { channel }) => {
@@ -325,7 +321,7 @@ export default definePlugin({
                         },
                         style: {
                             ...Object.fromEntries(TOGGLES.map(([key]) => [key, settings.store[key] === "on" || settings.store[key] === "always"])),
-                            font: findOption(args, "font", settings.store.font),
+                            font: settings.store.font,
                             effect: settings.store.effect,
                             place: settings.store.place
                         } as QuoteStyle
