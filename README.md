@@ -12,7 +12,7 @@ Needs git and Node 22 or newer. pnpm runs through corepack, so it doesn't need a
 ## Setup
 
 1. Run `.\update.ps1`. It clones Vencord, links `plugins/`, installs dependencies and builds.
-2. In Vesktop, open Settings > Vesktop Settings > Open Developer Settings. Under Vencord Location, click Change and pick the `vencord\dist` folder the script printed. Quit Vesktop from the tray and start it again.
+2. In Vesktop, open Settings > Vesktop (under Vencord Settings), scroll to Developer Options and click Open Developer Settings. Under Vencord Location, click Change and pick the `vencord\dist` folder the script printed. Quit Vesktop from the tray and start it again.
 3. Turn the plugins on in Settings > Vencord > Plugins.
 
 ## Writing a plugin
