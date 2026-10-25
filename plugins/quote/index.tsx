@@ -1,4 +1,4 @@
-import { ApplicationCommandOptionType, findOption, generateId, sendBotMessage } from "@api/Commands";
+import { ApplicationCommandInputType, ApplicationCommandOptionType, findOption, generateId, sendBotMessage } from "@api/Commands";
 import { definePluginSettings } from "@api/Settings";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { fetchUserProfile } from "@utils/discord";
@@ -248,7 +248,7 @@ async function makeQuote(ref: string, channelId: string) {
 
     const [helsea, message] = await Promise.all([helseaAuthor(), ref ? findMessage(ref, channelId) : reply?.message]);
     if (!message) {
-        sendBotMessage(channelId, { author: helsea, content: ref ? "Couldn't find that message." : "Reply to a message, or give a message ID or link." });
+        sendBotMessage(channelId, { author: helsea, content: ref ? "Couldn't find that message." : "Reply to a message first, or use /quote-link with a message ID or link." });
         return;
     }
 
@@ -301,9 +301,17 @@ async function makeQuote(ref: string, channelId: string) {
     }
 }
 
+function startQuote(ref: string, channelId: string) {
+    if (busy.has(channelId)) return;
+    busy.add(channelId);
+    makeQuote(ref, channelId)
+        .catch(() => sendBotMessage(channelId, { content: "Couldn't make that quote." }))
+        .finally(() => busy.delete(channelId));
+}
+
 export default definePlugin({
     name: "Quote",
-    description: "Use /quote while replying to a message, or give it a message ID or link, to make a quote image only you can see.",
+    description: "Use /quote while replying to a message, or /quote-link with a message ID or link, to make a quote image only you can see.",
     authors: [{ name: "aquaryuo", id: 975151124824879125n }],
     managedStyle,
     settings,
@@ -327,25 +335,47 @@ export default definePlugin({
         );
     },
 
+    patches: [
+        {
+            find: 'location:"getBuiltInCommands"',
+            replacement: {
+                match: /(!\i\|\|)(\i)(\.inputType===\i\.\i\.BUILT_IN_TEXT)/,
+                replace: "$1$self.canReply($2)||$2$3"
+            }
+        },
+        {
+            find: ".chatInputType.commands?.enabled===!0",
+            replacement: {
+                match: /(\i)&&(\i)\?\.inputType!==(\i\.\i\.BUILT_IN_TEXT)&&/,
+                replace: "$1&&!$self.canReply($2)&&$2?.inputType!==$3&&"
+            }
+        }
+    ],
+
+    canReply(command?: { plugin?: string; }) {
+        return command?.plugin === "Quote";
+    },
+
     commands: [
         {
             name: "quote",
-            description: "Make a quote image of a message. Only you see it",
+            description: "Quote the message you're replying to. Only you see it",
+            inputType: ApplicationCommandInputType.BUILT_IN,
+            execute: (_, { channel }) => startQuote("", channel.id)
+        },
+        {
+            name: "quote-link",
+            description: "Quote a message from its ID or link. Only you see it",
+            inputType: ApplicationCommandInputType.BUILT_IN,
             options: [
                 {
                     name: "message",
-                    description: "Message ID or link. Leave empty to quote the message you're replying to",
+                    description: "Message ID or link",
                     type: ApplicationCommandOptionType.STRING,
-                    required: false
+                    required: true
                 }
             ],
-            execute: (args, { channel }) => {
-                if (busy.has(channel.id)) return;
-                busy.add(channel.id);
-                makeQuote(findOption(args, "message", "").trim(), channel.id)
-                    .catch(() => sendBotMessage(channel.id, { content: "Couldn't make that quote." }))
-                    .finally(() => busy.delete(channel.id));
-            }
+            execute: (args, { channel }) => startQuote(findOption(args, "message", "").trim(), channel.id)
         }
     ]
 });
