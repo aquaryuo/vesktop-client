@@ -5,7 +5,7 @@ import { fetchUserProfile } from "@utils/discord";
 import { classes } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import type { Message } from "@vencord/discord-types";
-import { ChannelStore, Constants, FluxDispatcher, GuildMemberStore, IconUtils, MessageStore, PendingReplyStore, RestAPI, showToast, UploadHandler, UserProfileStore, UserStore, UserUtils, useEffect, useRef, useState } from "@webpack/common";
+import { ChannelStore, Constants, FluxDispatcher, GuildMemberStore, IconUtils, MessageStore, PendingReplyStore, React, RestAPI, showToast, UploadHandler, UserProfileStore, UserStore, UserUtils, useEffect, useRef, useState } from "@webpack/common";
 
 import { EFFECTS, EMOJI_BASE, FONTS, loadFonts, PLACES, QuoteContent, QuoteStyle, renderQuote, unloadFonts } from "./draw";
 import managedStyle from "./styles.css?managed";
@@ -133,6 +133,25 @@ function imageURL({ proxy_url, width, height }: Message["attachments"][number]) 
     return url.href;
 }
 
+const FONT_ITEMS = FONTS.map(f => ({ alias: f.alias, name: `${f.family} (${f.alias})` }));
+
+function Icon({ d }: { d: string; }) {
+    return <svg viewBox="0 0 24 24" aria-hidden="true"><path d={d} /></svg>;
+}
+
+function Picker({ label, value, items, onChange }: { label: string; value: string; items: { alias: string; name: string; icon?: string; }[]; onChange: (value: string) => void; }) {
+    const compact = items.every(i => i.icon);
+    return (
+        <select className={classes("vc-quote-select", compact && "vc-quote-compact")} aria-label={label} value={value} onChange={e => onChange(e.currentTarget.value)}>
+            <button type="button">
+                {React.createElement("selectedcontent")}
+                {compact && items.map(i => <span key={i.alias} className="vc-quote-sizer" aria-hidden="true"><Icon d={i.icon!} />{i.name}</span>)}
+            </button>
+            {items.map(i => <option key={i.alias} value={i.alias}>{i.icon && <Icon d={i.icon} />}{i.name}</option>)}
+        </select>
+    );
+}
+
 function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
     const [style, setStyle] = useState(quote.style);
     const [url, setUrl] = useState<string>();
@@ -160,7 +179,7 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
     };
 
     const { serverAvatar, banner, serverBanner, emojis, stickers, images } = quote.content;
-    const hidden: Partial<Record<keyof QuoteStyle, boolean>> = {
+    const missing: Partial<Record<keyof QuoteStyle, boolean>> = {
         server: !serverAvatar && !serverBanner,
         banner: !banner && !serverBanner,
         emojis: !emojis.some(e => e.image),
@@ -179,47 +198,27 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
         <div className={classes("vc-quote", style.vertical && "vc-quote-vertical")}>
             {url && <img className="vc-quote-image" src={url} alt={`Quote of ${quote.content.name}: ${quote.content.text}`} />}
             <div className="vc-quote-toggles">
-                {TOGGLES.filter(([key]) => !hidden[key] && !locked(key)).map(([key, title, label]) => (
+                {TOGGLES.filter(([key]) => !locked(key)).map(([key, title, label]) => (
                     <button
                         key={key}
                         type="button"
-                        title={title}
+                        title={missing[key] ? `${title} (not available)` : title}
                         aria-label={title}
-                        aria-pressed={!!style[key]}
+                        aria-pressed={!missing[key] && !!style[key]}
+                        disabled={missing[key]}
                         className="vc-quote-toggle"
                         onClick={() => setStyle({ ...style, [key]: !style[key] })}
                     >
-                        {typeof label === "string" ? label : <svg viewBox="0 0 24 24" aria-hidden="true"><path d={label.d} /></svg>}
+                        {typeof label === "string" ? label : <Icon d={label.d} />}
                     </button>
                 ))}
             </div>
             <div className="vc-quote-actions">
-                <select
-                    className="vc-quote-select"
-                    aria-label="Font"
-                    value={style.font}
-                    onChange={e => setStyle({ ...style, font: e.currentTarget.value })}
-                >
-                    {FONTS.map(f => <option key={f.alias} value={f.alias}>{`${f.family} (${f.alias})`}</option>)}
-                </select>
-                {style.banner && (
-                    <select
-                        className="vc-quote-select"
-                        aria-label="Banner effect"
-                        value={style.effect}
-                        onChange={e => setStyle({ ...style, effect: e.currentTarget.value })}
-                    >
-                        {EFFECTS.map(fx => <option key={fx.alias} value={fx.alias}>{fx.name}</option>)}
-                    </select>
+                <Picker label="Font" value={style.font} items={FONT_ITEMS} onChange={font => setStyle({ ...style, font })} />
+                {style.banner && !missing.banner && (
+                    <Picker label="Banner effect" value={style.effect} items={EFFECTS} onChange={effect => setStyle({ ...style, effect })} />
                 )}
-                <select
-                    className="vc-quote-select"
-                    aria-label="Name position"
-                    value={style.place}
-                    onChange={e => setStyle({ ...style, place: e.currentTarget.value })}
-                >
-                    {PLACES.map(p => <option key={p.alias} value={p.alias}>{p.name}</option>)}
-                </select>
+                <Picker label="Name position" value={style.place} items={PLACES} onChange={place => setStyle({ ...style, place })} />
                 <button type="button" className="vc-quote-button vc-quote-primary" onClick={send}>Send</button>
                 <button type="button" className="vc-quote-button" onClick={copy}>Copy</button>
             </div>

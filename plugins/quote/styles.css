@@ -101,6 +101,16 @@
     background: var(--q-solid);
 }
 
+.vc-quote-toggle:disabled {
+    color: var(--q-sub);
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.vc-quote-toggle:disabled::before {
+    border-color: var(--q-line-faint);
+}
+
 .vc-quote-toggle:focus-visible {
     outline: none;
 }
@@ -154,6 +164,49 @@
 
 .vc-quote-select::picker-icon {
     display: none;
+}
+
+.vc-quote-select > button {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    min-width: 0;
+}
+
+.vc-quote-select > button > * {
+    grid-area: 1 / 1;
+}
+
+.vc-quote-select selectedcontent {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vc-quote-compact {
+    flex: none;
+}
+
+.vc-quote-compact selectedcontent,
+.vc-quote-sizer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.vc-quote-sizer {
+    visibility: hidden;
+}
+
+.vc-quote-select svg {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: square;
+    stroke-linejoin: miter;
 }
 
 .vc-quote-select:open {

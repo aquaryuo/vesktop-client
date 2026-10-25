@@ -19,16 +19,16 @@ export const FONTS = [
 ];
 
 export const EFFECTS = [
-    { alias: "glass", name: "Glass", filter: "none", tint: 0.25 },
-    { alias: "blur", name: "Blur", filter: "blur(24px)", tint: 0.5 },
-    { alias: "dim", name: "Dim", filter: "none", tint: 0.6 },
-    { alias: "mono", name: "Mono", filter: "grayscale(1)", tint: 0.55 },
+    { alias: "glass", name: "Glass", filter: "none", tint: 0.25, icon: "M6 3h12l4 6-10 13L2 9ZM11 3 8 9l4 13 4-13-3-6M2 9h20" },
+    { alias: "blur", name: "Blur", filter: "blur(24px)", tint: 0.5, icon: "M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" },
+    { alias: "dim", name: "Dim", filter: "none", tint: 0.6, icon: "M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" },
+    { alias: "mono", name: "Mono", filter: "grayscale(1)", tint: 0.55, icon: "M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0M12 18a6 6 0 0 0 0-12v12z" },
 ];
 
 export const PLACES = [
-    { alias: "below", name: "Name below quote" },
-    { alias: "top", name: "Name at top" },
-    { alias: "bottom", name: "Name at bottom" },
+    { alias: "below", name: "Below", icon: "M12 5v14M19 12l-7 7-7-7" },
+    { alias: "top", name: "Top", icon: "M5 3h14M18 13l-6-6-6 6M12 7v14" },
+    { alias: "bottom", name: "Bottom", icon: "M12 17V3M6 11l6 6 6-6M19 21H5" },
 ];
 
 export const EMOJI_BASE = 0xE000;
