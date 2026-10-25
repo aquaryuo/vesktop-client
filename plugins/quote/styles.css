@@ -1,0 +1,58 @@
+.vc-quote {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 480px;
+    margin-top: 4px;
+}
+
+.vc-quote-vertical {
+    max-width: 300px;
+}
+
+.vc-quote-image {
+    width: 100%;
+    border-radius: 8px;
+}
+
+.vc-quote-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.vc-quote-button {
+    min-width: 48px;
+    height: 32px;
+    padding: 0 12px;
+    border: none;
+    border-radius: 8px;
+    background: var(--background-secondary-alt, #232428);
+    color: var(--text-default, var(--text-normal, #dbdee1));
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.vc-quote-button:hover {
+    background: var(--background-modifier-hover, #35373c);
+}
+
+.vc-quote-button:focus-visible,
+.vc-quote-select:focus-visible {
+    outline: 2px solid var(--focus-primary, #00a8fc);
+}
+
+.vc-quote-active,
+.vc-quote-active:hover {
+    background: var(--brand-500, #5865f2);
+    color: #fff;
+}
+
+.vc-quote-select {
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--border-subtle, #3f4147);
+    border-radius: 8px;
+    background: var(--input-background, #1e1f22);
+    color: var(--text-default, var(--text-normal, #dbdee1));
+}
