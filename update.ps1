@@ -25,4 +25,11 @@ try {
     Pop-Location
 }
 
+foreach ($name in "node_modules", "packages") {
+    $path = Join-Path $PSScriptRoot $name
+    if (-not (Test-Path $path)) {
+        New-Item -ItemType Junction -Path $path -Target (Join-Path $vencord $name) -ErrorAction Stop | Out-Null
+    }
+}
+
 "Vencord Location: $(Join-Path $vencord 'dist')"

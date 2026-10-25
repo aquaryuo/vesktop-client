@@ -6,6 +6,7 @@ My own Vencord plugins, running in a normal Vesktop install.
 - `vencord/` is an untouched clone of upstream Vencord. It is not committed. `update.ps1` creates it.
 - `vencord/src/userplugins` is a junction to `plugins/`, so Vencord builds them in.
 - `tsconfig.json` lets the plugins use Vencord's import aliases (`@utils/*`, `@api/*`, `@webpack/common`, ...).
+- `node_modules` and `packages` are junctions to Vencord's, so plugins can import its packages, such as `@vencord/discord-types`.
 
 Needs git and Node 22 or newer. pnpm runs through corepack, so it doesn't need a separate install.
 
@@ -20,6 +21,7 @@ Needs git and Node 22 or newer. pnpm runs through corepack, so it doesn't need a
 1. Copy `plugins/myPlugin` to a new folder and rename it.
 2. Run `corepack pnpm watch` inside `vencord/`. It rebuilds on every save.
 3. Press Ctrl+R in Vesktop to reload.
+4. Typecheck with `node vencord\node_modules\typescript\bin\tsc -p tsconfig.json --noEmit` from the repo root.
 
 Stop the watcher when you're done.
 
