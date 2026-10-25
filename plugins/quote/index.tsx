@@ -15,13 +15,13 @@ interface Quote {
 
 const quotes = new Map<string, Quote>();
 
-const TOGGLES: [keyof QuoteStyle, string, string][] = [
-    ["light", "☀", "Light background"],
-    ["color", "🎨", "Colour avatar"],
-    ["flip", "🔄", "Swap sides"],
-    ["bold", "B", "Bold"],
-    ["italic", "I", "Italic"],
-    ["vertical", "NEW", "Tall layout"],
+const TOGGLES: [keyof QuoteStyle, string, string | { d: string; }][] = [
+    ["light", "Light background", { d: "M8 12a4 4 0 1 0 8 0a4 4 0 1 0-8 0M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" }],
+    ["color", "Colour avatar", { d: "M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2zM13.5 6.5h.01M17.5 10.5h.01M8.5 7.5h.01M6.5 12.5h.01" }],
+    ["flip", "Swap sides", { d: "m17 2 4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3" }],
+    ["bold", "Bold", "B"],
+    ["italic", "Italic", "I"],
+    ["vertical", "Tall layout", "NEW"],
 ];
 
 async function findMessage(ref: string, channelId: string): Promise<Message | undefined> {
@@ -93,31 +93,31 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
     return (
         <div className={classes("vc-quote", style.vertical && "vc-quote-vertical")}>
             {url && <img className="vc-quote-image" src={url} alt={`Quote of ${quote.content.name}: ${quote.content.text}`} />}
-            <div className="vc-quote-row">
-                {TOGGLES.map(([key, label, title]) => (
+            <div className="vc-quote-toggles">
+                {TOGGLES.map(([key, title, label]) => (
                     <button
                         key={key}
                         type="button"
                         title={title}
                         aria-label={title}
                         aria-pressed={!!style[key]}
-                        className={classes("vc-quote-button", style[key] && "vc-quote-active")}
+                        className="vc-quote-toggle"
                         onClick={() => setStyle({ ...style, [key]: !style[key] })}
                     >
-                        {label}
+                        {typeof label === "string" ? label : <svg viewBox="0 0 24 24" aria-hidden="true"><path d={label.d} /></svg>}
                     </button>
                 ))}
             </div>
-            <select
-                className="vc-quote-select"
-                aria-label="Font"
-                value={style.font}
-                onChange={e => setStyle({ ...style, font: e.currentTarget.value })}
-            >
-                {FONTS.map(f => <option key={f.alias} value={f.alias}>{`${f.family} (${f.alias})`}</option>)}
-            </select>
-            <div className="vc-quote-row">
-                <button type="button" className="vc-quote-button" onClick={send}>Send</button>
+            <div className="vc-quote-actions">
+                <select
+                    className="vc-quote-select"
+                    aria-label="Font"
+                    value={style.font}
+                    onChange={e => setStyle({ ...style, font: e.currentTarget.value })}
+                >
+                    {FONTS.map(f => <option key={f.alias} value={f.alias}>{`${f.family} (${f.alias})`}</option>)}
+                </select>
+                <button type="button" className="vc-quote-button vc-quote-primary" onClick={send}>Send</button>
                 <button type="button" className="vc-quote-button" onClick={copy}>Copy</button>
             </div>
         </div>

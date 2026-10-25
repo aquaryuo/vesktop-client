@@ -35,7 +35,7 @@ export interface QuoteContent {
     username: string;
 }
 
-const FONTS_URL = "https://fonts.googleapis.com/css2?" + FONTS
+const FONTS_URL = "https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600&" + FONTS
     .map(f => "family=" + f.family.replaceAll(" ", "+") + (f.axes ? ":" + f.axes : ""))
     .join("&") + "&display=swap";
 
