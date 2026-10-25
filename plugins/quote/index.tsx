@@ -1,4 +1,4 @@
-import { ApplicationCommandInputType, ApplicationCommandOptionType, findOption, generateId, sendBotMessage } from "@api/Commands";
+import { ApplicationCommandOptionType, findOption, generateId, sendBotMessage } from "@api/Commands";
 import { definePluginSettings } from "@api/Settings";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { fetchUserProfile } from "@utils/discord";
@@ -256,7 +256,6 @@ export default definePlugin({
         {
             name: "quote",
             description: "Make a quote image of a message. Only you see it",
-            inputType: ApplicationCommandInputType.BUILT_IN,
             options: [
                 {
                     name: "message",
