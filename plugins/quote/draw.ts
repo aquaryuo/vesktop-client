@@ -215,10 +215,10 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
 
     const media = [...style.stickers ? content.stickers : [], ...style.images ? content.images : []];
     const ratio = media.reduce((sum, m) => sum + m.width / m.height, 0);
-    const mediaHeight = media.length ? Math.min(text ? room * 0.5 : room, (inner.w - gap * (media.length - 1)) / ratio) : 0;
-    const textRoom = room - mediaHeight - (text && media.length ? gap : 0);
+    const textRoom = media.length ? room * 0.6 - gap : room;
+    const jumbo = !text.replace(EMOJI, "").replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}\p{Join_Control}\p{Variation_Selector}\s]/gu, "");
 
-    let size = style.vertical ? 56 : 52;
+    let size = jumbo ? 160 : style.vertical ? 56 : 52;
     const measure = (s: string) => ctx.measureText(s.replace(EMOJI, "")).width + (s.match(EMOJI)?.length ?? 0) * size * 1.2;
     let lines: string[] = [];
     while (text) {
@@ -233,7 +233,9 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
         lines[maxLines - 1] = lines[maxLines - 1].replace(/.?$/u, "…");
     }
 
-    const body = header + lines.length * size * 1.3 + (text && media.length ? gap : 0) + mediaHeight;
+    const textHeight = lines.length * size * 1.3;
+    const mediaHeight = media.length ? Math.min(room - textHeight - (text ? gap : 0), (inner.w - gap * (media.length - 1)) / ratio) : 0;
+    const body = header + textHeight + (text && media.length ? gap : 0) + mediaHeight;
     const top = style.place === "top" ? inner.y + footer + gap : inner.y;
     const bottom = style.place === "top" ? inner.y + inner.h : inner.y + inner.h - footer - gap;
     const start = Math.max(top, Math.min(inner.y + (inner.h - body) / 2, bottom - body));

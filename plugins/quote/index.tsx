@@ -1,8 +1,9 @@
 import { ApplicationCommandInputType, ApplicationCommandOptionType, findOption, generateId, sendBotMessage } from "@api/Commands";
+import { definePluginSettings } from "@api/Settings";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { fetchUserProfile } from "@utils/discord";
 import { classes } from "@utils/misc";
-import definePlugin from "@utils/types";
+import definePlugin, { OptionType } from "@utils/types";
 import type { Message } from "@vencord/discord-types";
 import { ChannelStore, Constants, FluxDispatcher, GuildMemberStore, IconUtils, MessageStore, PendingReplyStore, RestAPI, showToast, UploadHandler, UserProfileStore, UserStore, UserUtils, useEffect, useRef, useState } from "@webpack/common";
 
@@ -38,6 +39,38 @@ const TOGGLES: [keyof QuoteStyle, string, string | { d: string; }][] = [
     ["images", "Images", { d: "M18 22H4a2 2 0 0 1-2-2V6M22 13l-1.296-1.296a2.41 2.41 0 0 0-3.408 0L11 18M10 8a2 2 0 1 0 4 0a2 2 0 1 0-4 0M8 2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" }],
     ["credit", "Quoted by", { d: "M12 20h9M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z" }],
 ];
+
+const ON_BY_DEFAULT: (keyof QuoteStyle)[] = ["emojis", "stickers", "images"];
+
+const settings = definePluginSettings({
+    font: {
+        type: OptionType.SELECT,
+        description: "Default font",
+        options: FONTS.map(f => ({ label: `${f.family} (${f.alias})`, value: f.alias, default: f === FONTS[0] }))
+    },
+    effect: {
+        type: OptionType.SELECT,
+        description: "Default banner effect",
+        options: EFFECTS.map(fx => ({ label: fx.name, value: fx.alias, default: fx === EFFECTS[0] }))
+    },
+    place: {
+        type: OptionType.SELECT,
+        description: "Default name position",
+        options: PLACES.map(p => ({ label: p.name, value: p.alias, default: p === PLACES[0] }))
+    },
+    ...Object.fromEntries(TOGGLES.map(([key, title]) => [key, {
+        type: OptionType.SELECT,
+        description: title,
+        options: [
+            { label: "On", value: "on", default: ON_BY_DEFAULT.includes(key) },
+            { label: "Off", value: "off", default: !ON_BY_DEFAULT.includes(key) },
+            { label: "Always on, toggle hidden", value: "always" },
+            { label: "Always off, toggle hidden", value: "never" }
+        ]
+    } as const]))
+});
+
+const locked = (key: keyof QuoteStyle) => settings.store[key] === "always" || settings.store[key] === "never";
 
 async function findMessage(ref: string, channelId: string): Promise<Message | undefined> {
     const link = ref.match(/channels\/(?:@me|\d+)\/(\d+)\/(\d+)/);
@@ -146,7 +179,7 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
         <div className={classes("vc-quote", style.vertical && "vc-quote-vertical")}>
             {url && <img className="vc-quote-image" src={url} alt={`Quote of ${quote.content.name}: ${quote.content.text}`} />}
             <div className="vc-quote-toggles">
-                {TOGGLES.filter(([key]) => !hidden[key]).map(([key, title, label]) => (
+                {TOGGLES.filter(([key]) => !hidden[key] && !locked(key)).map(([key, title, label]) => (
                     <button
                         key={key}
                         type="button"
@@ -199,6 +232,7 @@ export default definePlugin({
     description: "Use /quote while replying to a message, or give it a message ID or link, to make a quote image only you can see.",
     authors: [{ name: "aquaryuo", id: 975151124824879125n }],
     managedStyle,
+    settings,
 
     start() {
         loadFonts();
@@ -273,7 +307,7 @@ export default definePlugin({
                         loadOptional(guildId && member?.avatar && IconUtils.getGuildMemberAvatarURLSimple({ guildId, userId: author.id, avatar: member.avatar, size: 512 })),
                         loadOptional(profile?.banner && IconUtils.getUserBannerURL({ id: author.id, banner: profile.banner, canAnimate: false, size: 1024 })),
                         loadOptional(guildId && serverProfile?.banner && IconUtils.getGuildMemberBannerURL({ id: author.id, guildId, banner: serverProfile.banner, canAnimate: false, size: 1024 })),
-                        Promise.all(emojiRefs.map(async e => ({ name: e.name, image: await loadOptional(IconUtils.getEmojiURL({ id: e.id, animated: false, size: 96 })) }))),
+                        Promise.all(emojiRefs.map(async e => ({ name: e.name, image: await loadOptional(IconUtils.getEmojiURL({ id: e.id, animated: false, size: 256 })) }))),
                         loadAll(stickerItems.map(stickerURL)),
                         loadAll(attachments.slice(0, 4).map(imageURL))
                     ]);
@@ -292,22 +326,11 @@ export default definePlugin({
                             quoter: UserStore.getCurrentUser().username
                         },
                         style: {
-                            font: findOption(args, "font", "mplus"),
-                            bold: false,
-                            italic: false,
-                            light: false,
-                            color: false,
-                            flip: false,
-                            vertical: false,
-                            server: false,
-                            banner: false,
-                            effect: "glass",
-                            emojis: false,
-                            stickers: !text,
-                            images: !text,
-                            credit: false,
-                            place: "below"
-                        }
+                            ...Object.fromEntries(TOGGLES.map(([key]) => [key, settings.store[key] === "on" || settings.store[key] === "always"])),
+                            font: findOption(args, "font", settings.store.font),
+                            effect: settings.store.effect,
+                            place: settings.store.place
+                        } as QuoteStyle
                     });
                     sendBotMessage(channel.id, { id, author: helsea, content: "" });
                 } catch {
