@@ -388,10 +388,14 @@ function StartView() {
         <div className="vc-ei-option">
             <label className="vc-ei-label" htmlFor="vc-ei-start">GIF tab opens on</label>
             <select id="vc-ei-start" className="vc-ei-select" value={gifStart} onChange={e => settings.store.gifStart = e.currentTarget.value}>
-                <option value="">Categories</option>
+                <option value="">All categories</option>
                 <option value="favorites">Favorites</option>
                 <option value="trending">Trending GIFs</option>
-                {names.map(name => <option key={name} value={CATEGORY + name}>{name}</option>)}
+                {names.length > 0 && (
+                    <optgroup label="Categories">
+                        {names.map(name => <option key={name} value={CATEGORY + name}>{name.replace(/(^|\s)\S/g, c => c.toUpperCase())}</option>)}
+                    </optgroup>
+                )}
             </select>
         </div>
     );
