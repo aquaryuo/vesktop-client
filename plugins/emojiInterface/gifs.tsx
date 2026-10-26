@@ -30,7 +30,7 @@ const MAX_NAME = 24;
 let data: TagData = { tags: [], gifs: {} };
 let loaded: Promise<void> | undefined;
 let editing = false;
-let brush = "";
+let brush: string[] = [];
 let filter = "";
 let armed = "";
 let armTimer: ReturnType<typeof setTimeout> | undefined;
@@ -69,9 +69,9 @@ function useTags() {
     }, () => version);
 }
 
-function toggleTag(url: string, tag: string) {
+function applyTags(url: string, tags: string[]) {
     const current = data.gifs[url] ?? [];
-    const next = current.includes(tag) ? current.filter(t => t !== tag) : [...current, tag];
+    const next = tags.every(tag => current.includes(tag)) ? current.filter(tag => !tags.includes(tag)) : [...new Set([...current, ...tags])];
     const gifs = { ...data.gifs };
     if (next.length) gifs[url] = next;
     else delete gifs[url];
@@ -92,7 +92,7 @@ function createTag(name: string) {
     if (!clean || nameTaken(clean)) return false;
     const id = `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     data = { ...data, tags: [...data.tags, { id, name: clean }] };
-    brush = id;
+    brush = [...brush, id];
     persist();
     return true;
 }
@@ -112,7 +112,7 @@ function deleteTag(id: string) {
         if (next.length) gifs[url] = next;
     }
     data = { tags: data.tags.filter(tag => tag.id !== id), gifs };
-    if (brush === id) brush = "";
+    brush = brush.filter(tag => tag !== id);
     if (filter === id) filter = "";
     persist();
 }
@@ -133,7 +133,7 @@ function arm(url: string) {
 
 export function allowGif(gif: Gif, extra?: { shiftKey?: boolean; }) {
     if (editing) {
-        if (brush && gif.url) toggleTag(gif.url, brush);
+        if (brush.length && gif.url) applyTags(gif.url, brush);
         return false;
     }
     if (extra?.shiftKey || !settings.store.gifGuard || !gif.url) return true;
@@ -149,7 +149,7 @@ export function gifFlags(gif?: Gif) {
     return {
         "data-vc-ei-spoiler": has(gif, SPOILER) || undefined,
         "data-vc-ei-armed": (!!armed && armed === gif?.url) || undefined,
-        "data-vc-ei-brush": (editing && !!brush && has(gif, brush)) || undefined
+        "data-vc-ei-brush": (editing && brush.length > 0 && brush.every(tag => has(gif, tag))) || undefined
     };
 }
 
@@ -158,7 +158,23 @@ export function gifContent(gif: Gif & { url: string; }) {
 }
 
 export function filterGifs<T extends Gif>(list: T[]) {
-    return filter ? list.filter(gif => has(gif, filter)) : list;
+    return filter && !editing ? list.filter(gif => has(gif, filter)) : list;
+}
+
+function TagEmpty({ name, searching }: { name: string; searching: boolean; }) {
+    return (
+        <div className="vc-ei-empty" role="status">
+            <strong>{searching ? `No GIFs tagged ${name} match your search` : `No GIFs tagged ${name} yet`}</strong>
+            <span>{searching ? "Try another search, or show all your favorites." : `Click Edit, pick ${name}, then click the GIFs you want to tag.`}</span>
+            <button type="button" className="vc-ei-button" onClick={() => { filter = ""; refresh(); }}>Show all favorites</button>
+        </div>
+    );
+}
+
+export function tagEmpty(query?: string) {
+    if (!filter || editing) return null;
+    const name = allTags().find(tag => tag.id === filter)?.name;
+    return name ? <TagEmpty name={name} searching={!!query} /> : null;
 }
 
 export function trackGif(item: Updatable) {
@@ -180,7 +196,8 @@ export function pickerGone(instance: { forceUpdate(): void; }) {
     clearTimeout(armTimer);
     picker = null;
     editing = false;
-    brush = filter = armed = "";
+    brush = [];
+    filter = armed = "";
 }
 
 export function stopGifs() {
@@ -188,7 +205,8 @@ export function stopGifs() {
     items.clear();
     picker = null;
     editing = false;
-    brush = filter = armed = "";
+    brush = [];
+    filter = armed = "";
 }
 
 function EditableTag({ tag }: { tag: Tag; }) {
@@ -228,9 +246,9 @@ function EditableTag({ tag }: { tag: Tag; }) {
             <button
                 type="button"
                 className="vc-ei-choice"
-                aria-pressed={brush === tag.id}
+                aria-pressed={brush.includes(tag.id)}
                 title={builtIn ? "Spoiler tags send the GIF as a spoiler" : "Click to apply, double-click to rename"}
-                onClick={() => { brush = brush === tag.id ? "" : tag.id; refresh(); }}
+                onClick={() => { brush = brush.includes(tag.id) ? brush.filter(id => id !== tag.id) : [...brush, tag.id]; refresh(); }}
                 onDoubleClick={() => { if (!builtIn) { setValue(tag.name); setRenaming(true); } }}
             >
                 {tag.name}
@@ -275,10 +293,11 @@ function NewTag() {
 export function GifTools() {
     useTags();
     const tags = allTags();
-    const brushName = tags.find(tag => tag.id === brush)?.name;
+    const names = tags.filter(tag => brush.includes(tag.id)).map(tag => tag.name);
+    const brushName = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
     return (
         <div className="vc-ei-giftools" data-vc-ei-editing={editing || undefined}>
-            <div className="vc-ei-chips" role="group" aria-label={editing ? "Tags, pick one to apply" : "Filter favorites by tag"}>
+            <div className="vc-ei-chips" role="group" aria-label={editing ? "Tags to apply, pick one or more" : "Filter favorites by tag"}>
                 {editing
                     ? <>{tags.map(tag => <EditableTag key={tag.id} tag={tag} />)}<NewTag /></>
                     : <>
@@ -288,8 +307,8 @@ export function GifTools() {
                         ))}
                     </>}
             </div>
-            <button type="button" className="vc-ei-choice vc-ei-edit" aria-pressed={editing} onClick={() => { editing = !editing; brush = ""; disarm(); refresh(); }}>{editing ? "Done" : "Edit"}</button>
-            {editing && <p className="vc-ei-hint" role="status">{brushName ? `Click GIFs to add or remove ${brushName}.` : "Pick a tag, then click GIFs to tag them."}</p>}
+            <button type="button" className="vc-ei-choice vc-ei-edit" aria-pressed={editing} onClick={() => { editing = !editing; brush = []; disarm(); refresh(); }}>{editing ? "Done" : "Edit"}</button>
+            {editing && <p className="vc-ei-hint" role="status">{brushName ? `Click GIFs to add or remove ${brushName}.` : "Pick one or more tags, then click GIFs to tag them."}</p>}
         </div>
     );
 }

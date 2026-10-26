@@ -7,7 +7,7 @@ import { findStoreLazy } from "@webpack";
 import { EmojiStore, FluxDispatcher, React, showToast, UserSettingsActionCreators, UserStore, useEffect, useLayoutEffect, useRef, useState } from "@webpack/common";
 import type { ImgHTMLAttributes, MouseEvent as ReactMouseEvent, SyntheticEvent } from "react";
 
-import { allowGif, filterGifs, gifContent, gifFlags, GifTools, pickerGone, pickerMounted, stopGifs, trackGif, untrackGif } from "./gifs";
+import { allowGif, filterGifs, gifContent, gifFlags, GifTools, pickerGone, pickerMounted, stopGifs, tagEmpty, trackGif, untrackGif } from "./gifs";
 import { Kind, messageMenu, pickerMenu, PlusButton, restoreCloner, revokeUrls, saveDropped, SavedPanel, SavedStrip } from "./saved";
 import managedStyle from "./styles.css?managed";
 
@@ -890,6 +890,10 @@ export default definePlugin({
                     replace: "$&...$self.gifFlags(this.props.item),"
                 },
                 {
+                    match: /renderEmptyFavorites\(\)\{return/,
+                    replace: "$& $self.renderTagEmpty(this.props.query)??"
+                },
+                {
                     match: /componentDidMount\(\)\{(?=let\{props:\{format:)/,
                     replace: "$&$self.trackGif(this);"
                 },
@@ -946,6 +950,10 @@ export default definePlugin({
     trackGif,
     untrackGif,
     pickerGone,
+
+    renderTagEmpty(query?: string) {
+        return tagEmpty(query);
+    },
 
     renderGifTools() {
         return (
