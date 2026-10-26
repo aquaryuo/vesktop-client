@@ -93,7 +93,6 @@ function createTag(name: string) {
     if (!clean || nameTaken(clean)) return false;
     const id = `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     data = { ...data, tags: [...data.tags, { id, name: clean }] };
-    brush = [...brush, id];
     persist();
     return true;
 }
@@ -148,11 +147,12 @@ export function allowGif(gif: Gif, extra?: { shiftKey?: boolean; }) {
 
 export function gifFlags(gif?: Gif) {
     const selected = editing && brush.length > 0 && brush.every(tag => has(gif, tag));
+    const names = editing ? allTags().filter(tag => has(gif, tag.id)).map(tag => tag.name).join(", ") : "";
     return {
         "data-vc-ei-spoiler": has(gif, SPOILER) || undefined,
         "data-vc-ei-armed": (!!armed && armed === gif?.url) || undefined,
         "data-vc-ei-brush": selected || undefined,
-        "data-vc-ei-tags": selected ? allTags().filter(tag => has(gif, tag.id)).map(tag => tag.name).join(", ") : undefined
+        "data-vc-ei-tags": names || undefined
     };
 }
 

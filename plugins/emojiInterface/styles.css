@@ -1403,3 +1403,25 @@
     z-index: 2;
     scale: 1.04;
 }
+
+.vc-ei-emojis [class*="emojiItem_"] > :first-child,
+.vc-ei [data-type="sticker"] [class*="stickerNode_"] {
+    pointer-events: none;
+}
+
+.vc-ei:has([data-vc-ei-editing]) [class*="result_"][class*="result_"]:is(:hover, [data-focused="true"]) {
+    scale: none;
+}
+
+.vc-ei:has([data-vc-ei-editing]) [class*="result_"][data-vc-ei-tags]:not([data-vc-ei-brush])::after {
+    content: attr(data-vc-ei-tags);
+    inset: auto 0 0;
+    z-index: 3;
+    padding: 5px 8px;
+    background: color-mix(in srgb, var(--q-bg) 78%, transparent);
+    color: var(--q-text);
+    font: 600 10px/1.3 var(--q-display);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    overflow-wrap: anywhere;
+}

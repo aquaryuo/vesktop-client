@@ -19,6 +19,7 @@ const CHECK_TIMEOUT = 15000;
 const CHECK_WORKERS = 6;
 const CATEGORY = "category:";
 const GIF_GAP = 4;
+const SCROLL_SLACK = 2;
 const BOOKMARK = "M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z";
 const PLACES: ["tab" | "inline" | "both", string][] = [["tab", "Saved tab"], ["inline", "Inside tabs"], ["both", "Both"]];
 const COG = "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0";
@@ -840,6 +841,14 @@ export default definePlugin({
                 {
                     match: /\?\(0,\i\.jsx\)\(\i,\{channel:\i,closePopout:\i\}\):null(?=\])/,
                     replace: '$&,$self.renderStrip("emoji")'
+                },
+                {
+                    match: /(onActiveCategoryIndexChange:function\(\i\)\{[^}]*\},scrollOffset:)0/,
+                    replace: `$1${SCROLL_SLACK}`
+                },
+                {
+                    match: /findLastIndex\((\i)=>\1\.offset\.top<=(\i)\)/,
+                    replace: `findLastIndex($1=>$1.offset.top<=$2+${SCROLL_SLACK})`
                 },
                 {
                     match: /(isInspected:(\i),isDisabled:\i,showPulse:.{0,1400}?allowAnimatedEmoji:)(\i)(,isLocked:)/,
