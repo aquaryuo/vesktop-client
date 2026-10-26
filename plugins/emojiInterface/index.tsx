@@ -53,7 +53,7 @@ const settings = definePluginSettings({
     },
     hoverPlay: {
         type: OptionType.BOOLEAN,
-        description: "Play GIFs in the picker only while you hover them",
+        description: "Animate GIFs, stickers and emojis in the picker only while you hover them",
         default: true
     },
     scale: {
@@ -414,7 +414,7 @@ function Panel({ onReset }: { onReset(): void; }) {
                 </div>
             </div>
             <StartView />
-            <Option label="Play GIFs only on hover" value={hoverPlay} onChange={setHoverPlay} />
+            <Option label="Animate only on hover" value={hoverPlay} onChange={setHoverPlay} />
             <Option label="Size stickers and emojis to the picker" value={scale} onChange={on => settings.store.scale = on} />
             <div className="vc-ei-option">
                 <span className="vc-ei-label">Picker size</span>
@@ -439,8 +439,11 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
             if (tab && tab.id !== "vc-ei-tab") setPanel(false);
         };
         drawer.addEventListener("click", close);
+        drawer.addEventListener("pointerover", onHover);
         return () => {
             drawer.removeEventListener("click", close);
+            drawer.removeEventListener("pointerover", onHover);
+            hovered = null;
             setPanel(false);
         };
     }, []);
@@ -505,9 +508,10 @@ function GifImage(props: ImgHTMLAttributes<HTMLImageElement>) {
     function grab(e: SyntheticEvent<HTMLImageElement>) {
         const img = e.currentTarget, el = canvas.current;
         if (!el || !img.naturalWidth) return;
-        el.width = img.naturalWidth;
-        el.height = img.naturalHeight;
-        el.getContext("2d")?.drawImage(img, 0, 0);
+        const scale = Math.min(1, (Number(props.width) || img.naturalWidth) * devicePixelRatio / img.naturalWidth);
+        el.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        el.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        el.getContext("2d")?.drawImage(img, 0, 0, el.width, el.height);
         setReady(true);
     }
 
@@ -556,15 +560,25 @@ export default definePlugin({
                 {
                     match: /role:"tablist",.{0,80}?children:\[\i,\i,\i,/,
                     replace: "$&$self.renderTab(),"
+                },
+                {
+                    match: /preferAnimation:(\i)<=(\i),/,
+                    replace: "preferAnimation:!$self.settings.store.hoverPlay&&$1<=$2,"
                 }
             ]
         },
         {
             find: '"tabpanel":void 0,className:',
-            replacement: {
-                match: /"tabpanel":void 0,className:/,
-                replace: '$&"vc-ei-emojis "+'
-            }
+            replacement: [
+                {
+                    match: /"tabpanel":void 0,className:/,
+                    replace: '$&"vc-ei-emojis "+'
+                },
+                {
+                    match: /(isInspected:(\i),isDisabled:\i,showPulse:.{0,1400}?allowAnimatedEmoji:)(\i)(,isLocked:)/,
+                    replace: "$1$self.animate($3,$2)$4"
+                }
+            ]
         },
         {
             find: "backToFrontPage=",
@@ -613,13 +627,10 @@ export default definePlugin({
         link.rel = "stylesheet";
         link.href = FONT_URL;
         document.head.append(link);
-        document.addEventListener("pointerover", onHover);
     },
 
     stop() {
         document.getElementById("vc-ei-font")?.remove();
-        document.removeEventListener("pointerover", onHover);
-        hovered = null;
         clearTimeout(nudgeTimer);
     },
 
@@ -646,6 +657,10 @@ export default definePlugin({
             if (!picker.props.hideFavorites) picker.handleSelectItem(types.FAVORITES);
         } else if (view === "trending") picker.handleSelectItem(types.TRENDING_GIFS);
         else if (view.startsWith(CATEGORY)) picker.handleSelectItem(types.TRENDING_CATEGORY, view.slice(CATEGORY.length));
+    },
+
+    animate(allowed: boolean, inspected: boolean) {
+        return allowed && (inspected || !settings.store.hoverPlay);
     },
 
     isStart(type: string) {
