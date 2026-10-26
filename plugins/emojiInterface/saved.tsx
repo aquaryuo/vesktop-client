@@ -343,10 +343,14 @@ function openClone(source: Source) {
     ));
 }
 
-function SaveModal({ kind: initial, from, file, onClose }: { kind: Kind; from: "file" | "link"; file?: File; onClose(): void; }) {
+function nameFrom(text: string) {
+    return text.replace(/[?#].*$/, "").split("/").pop()!.replace(/\.[^.]+$/, "").replace(/\W/g, "_").slice(0, 32);
+}
+
+function SaveModal({ kind: initial, from, file, link: initialLink = "", onClose }: { kind: Kind; from: "file" | "link"; file?: File; link?: string; onClose(): void; }) {
     const [kind, setKind] = useState<Kind>(initial);
-    const [name, setName] = useState(file ? file.name.replace(/\.[^.]+$/, "").replace(/\W/g, "_").slice(0, 32) : "");
-    const [link, setLink] = useState("");
+    const [name, setName] = useState(file ? nameFrom(file.name) : initialLink ? nameFrom(initialLink) : "");
+    const [link, setLink] = useState(initialLink);
     const [status, setStatus] = useState("");
     const valid = kind === "emoji" ? EMOJI_NAME.test(name) : name.length >= 2 && name.length <= 30;
 
@@ -398,14 +402,25 @@ function SaveModal({ kind: initial, from, file, onClose }: { kind: Kind; from: "
     );
 }
 
-async function openSave(kind: Kind, from: "file" | "link") {
-    const file = from === "file" ? await chooseFile("image/png,image/gif,image/webp,image/jpeg") : undefined;
-    if (from === "file" && !file) return;
+function openSaveModal(kind: Kind, file?: File, link?: string) {
+    const from = file ? "file" : "link";
     openModal(props => (
         <Modal {...props} size="sm" title={from === "file" ? "Save from a file" : "Save from a link"}>
-            <SaveModal kind={kind} from={from} file={file ?? undefined} onClose={props.onClose} />
+            <SaveModal kind={kind} from={from} file={file} link={link} onClose={props.onClose} />
         </Modal>
     ));
+}
+
+async function openSave(kind: Kind, from: "file" | "link") {
+    if (from === "link") return openSaveModal(kind);
+    const file = await chooseFile("image/png,image/gif,image/webp,image/jpeg");
+    if (file) openSaveModal(kind, file);
+}
+
+export function saveDropped(kind: Kind, file?: File, link?: string) {
+    if (file && !file.type.startsWith("image/")) return "Emojis and stickers need an image.";
+    openSaveModal(kind, file, link);
+    return "";
 }
 
 async function uploadFile(kind: Kind) {

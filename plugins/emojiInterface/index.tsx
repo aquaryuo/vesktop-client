@@ -4,10 +4,11 @@ import { classes } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { chooseFile, saveFile } from "@utils/web";
 import { findStoreLazy } from "@webpack";
-import { EmojiStore, FluxDispatcher, React, UserSettingsActionCreators, UserStore, useEffect, useLayoutEffect, useRef, useState } from "@webpack/common";
+import { EmojiStore, FluxDispatcher, React, showToast, UserSettingsActionCreators, UserStore, useEffect, useLayoutEffect, useRef, useState } from "@webpack/common";
 import type { ImgHTMLAttributes, MouseEvent as ReactMouseEvent, SyntheticEvent } from "react";
 
-import { Kind, messageMenu, pickerMenu, PlusButton, restoreCloner, revokeUrls, SavedPanel, SavedStrip } from "./saved";
+import { allowGif, filterGifs, gifContent, gifFlags, GifTools, pickerGone, pickerMounted, stopGifs, trackGif, untrackGif } from "./gifs";
+import { Kind, messageMenu, pickerMenu, PlusButton, restoreCloner, revokeUrls, saveDropped, SavedPanel, SavedStrip } from "./saved";
 import managedStyle from "./styles.css?managed";
 
 const MIN_HEIGHT = 280;
@@ -65,6 +66,11 @@ export const settings = definePluginSettings({
         description: "Last applied defaults",
         default: 0,
         hidden: true
+    },
+    gifGuard: {
+        type: OptionType.BOOLEAN,
+        description: "Click a GIF twice to send it, so a stray click doesn't post it",
+        default: true
     },
     autoAnimate: {
         type: OptionType.BOOLEAN,
@@ -260,6 +266,94 @@ async function removeGifs(urls: string[]) {
     await frecency().updateAsync("favoriteGifs", (data: { gifs: Record<string, Gif>; }) => {
         for (const url of urls) delete data.gifs[url];
     }, 0);
+}
+
+function measure(src: string, video: boolean) {
+    return new Promise<{ width: number; height: number; }>((resolve, reject) => {
+        const el = video ? document.createElement("video") : new Image();
+        const timer = setTimeout(() => done(), CHECK_TIMEOUT);
+        function done() {
+            clearTimeout(timer);
+            const width = el instanceof HTMLVideoElement ? el.videoWidth : el.naturalWidth;
+            const height = el instanceof HTMLVideoElement ? el.videoHeight : el.naturalHeight;
+            el.onload = el.onerror = null;
+            el.removeAttribute("src");
+            if (width && height) resolve({ width, height });
+            else reject(new Error("no size"));
+        }
+        el.onerror = () => done();
+        if (el instanceof HTMLVideoElement) {
+            el.preload = "metadata";
+            el.muted = true;
+            el.onloadedmetadata = () => done();
+        } else el.onload = () => done();
+        el.src = src;
+    });
+}
+
+async function addGifFavorite(link: string) {
+    let url: URL;
+    try {
+        url = new URL(link);
+    } catch {
+        return "That isn't a link.";
+    }
+    if (url.protocol !== "https:") return "Use an https link.";
+    const video = /\.(mp4|webm)$/i.test(url.pathname);
+    if (!video && !/\.(gif|webp|avif|png)$/i.test(url.pathname)) return "Drop a direct GIF or video link.";
+    const proto = protoField("favoriteGifs");
+    if (!proto) return "Couldn't reach your favorite GIFs.";
+    let size: { width: number; height: number; };
+    try {
+        size = await measure(url.href, video);
+    } catch {
+        return "Couldn't load that GIF.";
+    }
+    let result = "Added to favorite GIFs.";
+    await frecency().updateAsync("favoriteGifs", (data: { gifs: Record<string, Gif>; }) => {
+        if (data.gifs[url.href]) {
+            result = "That GIF is already a favorite.";
+            return false;
+        }
+        const order = Object.values(data.gifs).reduce((max, gif) => Math.max(max, gif.order), 0) + 1;
+        const gifs = { ...data.gifs, [url.href]: { format: video ? 2 : 1, src: url.href, width: size.width, height: size.height, order } };
+        if (proto.toBinary({ ...data, gifs }).length > MAX_GIF_BYTES) {
+            result = "Discord's favorite GIFs are full.";
+            return false;
+        }
+        data.gifs = gifs;
+    }, 0);
+    return result;
+}
+
+type DropTarget = "emoji" | "sticker" | "gif";
+
+const DROP_TEXT: Record<DropTarget, string> = {
+    emoji: "Drop to save an emoji",
+    sticker: "Drop to save a sticker",
+    gif: "Drop to add to favorite GIFs"
+};
+
+function dropTarget(drawer: HTMLElement): DropTarget {
+    if (panelView !== "saved") {
+        if (drawer.querySelector("#gif-picker-tab-panel")) return "gif";
+        if (drawer.querySelector("#sticker-picker-tab-panel")) return "sticker";
+    }
+    return "emoji";
+}
+
+function handleDrop(target: DropTarget, transfer: DataTransfer) {
+    const file = [...transfer.files].find(f => f.type.startsWith("image/") || f.type.startsWith("video/"));
+    const link = (transfer.getData("text/uri-list") || transfer.getData("text/plain"))
+        .split(/\r?\n/).map(line => line.trim()).find(line => /^https:\/\/\S+$/.test(line));
+    const notify = (text: string) => text && showToast({ text });
+    if (target === "gif") {
+        if (link) addGifFavorite(link).then(notify, () => notify("Couldn't add that GIF."));
+        else notify(file ? "Favorite GIFs need a link. Drop the GIF's link instead." : "Drop a GIF link.");
+        return;
+    }
+    if (file || link) notify(saveDropped(target, file, link));
+    else notify("Drop an image or an image link.");
 }
 
 async function importFavorites() {
@@ -486,7 +580,7 @@ function Choices<T extends string>({ label, value, options, onChange }: { label:
 }
 
 function Panel({ onReset }: { onReset(): void; }) {
-    const { columns, hoverPlay, autoAnimate, scale, savedPlace, savedSend } = settings.use(["columns", "hoverPlay", "autoAnimate", "scale", "savedPlace", "savedSend"]);
+    const { columns, hoverPlay, gifGuard, autoAnimate, scale, savedPlace, savedSend } = settings.use(["columns", "hoverPlay", "gifGuard", "autoAnimate", "scale", "savedPlace", "savedSend"]);
     return (
         <div className="vc-ei-panel" id="vc-ei-panel" role="tabpanel" aria-labelledby="vc-ei-tab">
             <div className="vc-ei-option">
@@ -499,6 +593,7 @@ function Panel({ onReset }: { onReset(): void; }) {
             </div>
             <StartView />
             <Option label="Play GIFs only on hover" value={hoverPlay} onChange={setHoverPlay} />
+            <Option label="Click GIFs twice to send" value={gifGuard} onChange={on => settings.store.gifGuard = on} />
             <Option label="Play emojis and stickers automatically" value={autoAnimate} onChange={on => settings.store.autoAnimate = on} />
             <Option label="Size stickers and emojis to the picker" value={scale} onChange={on => settings.store.scale = on} />
             <Choices label="Saved items show in" value={savedPlace} options={PLACES} onChange={place => settings.store.savedPlace = place} />
@@ -528,21 +623,39 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
         const resize = (e: MouseEvent) => {
             if ((e.target as Element).matches?.('[class*="resizeHandle_"]')) freeze(drawer);
         };
+        const accepts = (e: DragEvent) => !!e.dataTransfer && ["Files", "text/uri-list", "text/plain"].some(type => e.dataTransfer!.types.includes(type));
+        const over = (e: DragEvent) => {
+            if (!accepts(e)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer!.dropEffect = "copy";
+            drawer.dataset.vcEiDrop = DROP_TEXT[dropTarget(drawer)];
+        };
+        const leave = (e: DragEvent) => {
+            if (!drawer.contains(e.relatedTarget as Node | null)) delete drawer.dataset.vcEiDrop;
+        };
+        const drop = (e: DragEvent) => {
+            if (!accepts(e)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            delete drawer.dataset.vcEiDrop;
+            handleDrop(dropTarget(drawer), e.dataTransfer!);
+        };
         drawer.addEventListener("click", close);
         drawer.addEventListener("pointerover", onHover);
         drawer.addEventListener("mousedown", resize, true);
-        markComplete(drawer);
-        const added = new MutationObserver(records => {
-            for (const record of records)
-                for (const node of record.addedNodes)
-                    if (node instanceof Element) markComplete(node);
-        });
-        added.observe(drawer, { childList: true, subtree: true });
+        drawer.addEventListener("dragenter", over, true);
+        drawer.addEventListener("dragover", over, true);
+        drawer.addEventListener("dragleave", leave, true);
+        drawer.addEventListener("drop", drop, true);
         return () => {
-            added.disconnect();
             drawer.removeEventListener("click", close);
             drawer.removeEventListener("pointerover", onHover);
             drawer.removeEventListener("mousedown", resize, true);
+            drawer.removeEventListener("dragenter", over, true);
+            drawer.removeEventListener("dragover", over, true);
+            drawer.removeEventListener("dragleave", leave, true);
+            drawer.removeEventListener("drop", drop, true);
             hovered = null;
             setPanel("");
         };
@@ -639,16 +752,6 @@ function GifImage(props: ImgHTMLAttributes<HTMLImageElement>) {
     );
 }
 
-function markLoaded(e: Event) {
-    const img = e.target;
-    if (img instanceof HTMLImageElement && img.closest(".vc-ei")) img.dataset.vcEiLoaded = "";
-}
-
-function markComplete(root: Element) {
-    for (const img of root instanceof HTMLImageElement ? [root] : root.querySelectorAll("img"))
-        if (img.complete) img.dataset.vcEiLoaded = "";
-}
-
 let hovered: HTMLVideoElement | null = null;
 
 function onHover(e: PointerEvent) {
@@ -743,10 +846,33 @@ export default definePlugin({
                     replace: "$1&&!$self.isStart($2)$3"
                 },
                 {
+                    match: /handleSelectGIF=\((\i),(\i)\)=>\{/,
+                    replace: "$&if(!$self.allowGif($1,$2))return;"
+                },
+                {
+                    match: /(data:\i===\i\.\i\.FAVORITES\?)(function\(\i,\i\)\{.+?\}\)\}\(\i,\i\))/,
+                    replace: "$1$self.filterGifs($2)"
+                },
+                {
+                    match: /(case \i\.\i\.FAVORITES:return\(0,\i\.jsxs\)\("div",\{className:\i\.\i,children:\[)/,
+                    replace: "$1$self.renderGifTools(),"
+                },
+                {
+                    match: /componentWillUnmount\(\)\{(?=\i\.\i\(\),document\.removeEventListener\("keydown",this\.backToFrontPage\))/,
+                    replace: "$&$self.pickerGone(this),"
+                },
+                {
                     match: /itemGutter:12/g,
                     replace: `itemGutter:${GIF_GAP}`
                 }
             ]
+        },
+        {
+            find: 'source_object:"GIF Picker",gif_url:',
+            replacement: {
+                match: /(\i)\((\i)\.url,void 0,void 0,!0,void 0,(\i)\)/,
+                replace: "$1($self.gifContent($2),void 0,void 0,!0,void 0,$3)"
+            }
         },
         {
             find: "oncanplay=this.handleCanPlay",
@@ -758,6 +884,18 @@ export default definePlugin({
                 {
                     match: /"img",(?=\{src:\i\(\i\),width:)/,
                     replace: "$self.GifImage,"
+                },
+                {
+                    match: /"data-focused":\i,/,
+                    replace: "$&...$self.gifFlags(this.props.item),"
+                },
+                {
+                    match: /componentDidMount\(\)\{(?=let\{props:\{format:)/,
+                    replace: "$&$self.trackGif(this);"
+                },
+                {
+                    match: /componentWillUnmount\(\)\{(?=this\._mounted=!1)/,
+                    replace: "$&$self.untrackGif(this);"
                 },
                 {
                     match: /itemGutter:12/g,
@@ -786,8 +924,6 @@ export default definePlugin({
         link.rel = "stylesheet";
         link.href = FONT_URL;
         document.head.append(link);
-        document.addEventListener("load", markLoaded, true);
-        document.addEventListener("error", markLoaded, true);
         if (settings.store.defaultsVersion < 1) {
             settings.store.columns = 3;
             settings.store.hoverPlay = false;
@@ -797,11 +933,26 @@ export default definePlugin({
 
     stop() {
         document.getElementById("vc-ei-font")?.remove();
-        document.removeEventListener("load", markLoaded, true);
-        document.removeEventListener("error", markLoaded, true);
         clearTimeout(nudgeTimer);
         restoreCloner();
         revokeUrls();
+        stopGifs();
+    },
+
+    allowGif,
+    gifFlags,
+    gifContent,
+    filterGifs,
+    trackGif,
+    untrackGif,
+    pickerGone,
+
+    renderGifTools() {
+        return (
+            <ErrorBoundary noop>
+                <GifTools />
+            </ErrorBoundary>
+        );
     },
 
     renderFrame(onWidthDown: (e: ReactMouseEvent) => void, side: string) {
@@ -836,7 +987,8 @@ export default definePlugin({
         );
     },
 
-    startView(picker: { props: { query?: string; hideFavorites?: boolean; }; handleSelectItem(type: string, name?: string): void; }, types: Record<string, string>) {
+    startView(picker: { props: { query?: string; hideFavorites?: boolean; }; handleSelectItem(type: string, name?: string): void; forceUpdate(): void; }, types: Record<string, string>) {
+        pickerMounted(picker);
         const view = settings.store.gifStart;
         if (!view || picker.props.query) return;
         if (view === "favorites") {

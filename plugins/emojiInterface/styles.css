@@ -1155,81 +1155,166 @@
     gap: var(--space-12, 12px);
 }
 
-@keyframes vc-ei-shimmer {
-    from {
-        translate: -100% 0;
-    }
 
-    to {
-        translate: 100% 0;
-    }
+.vc-ei :has(> .vc-ei-giftools) {
+    flex-wrap: wrap;
+    row-gap: 10px;
 }
 
-@keyframes vc-ei-sweep {
-    from {
-        background-position: 100% 0;
-    }
-
-    to {
-        background-position: 0 0;
-    }
+.vc-ei-giftools {
+    display: flex;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    order: 3;
+    min-width: 0;
 }
 
-.vc-ei :is([class*="emojiItem_"], [data-type="sticker"], [class*="categoryItemGuildCategory_"], .vc-ei-saved-item):has(img:not([data-vc-ei-loaded])),
-.vc-ei [class*="result_"][class*="result_"][style*="background-color"],
-.vc-ei [class*="placeholder_"],
-.vc-ei [class*="categoryLoader_"],
-.vc-ei [class*="column_"] > [class*="gif_"],
-.vc-ei-saved-blank {
-    position: relative;
-    isolation: isolate;
+.vc-ei-chips {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding-left: 6px;
+}
+
+.vc-ei-chips .vc-ei-choice,
+.vc-ei-edit {
+    height: 28px;
+    padding: 0 12px;
+}
+
+.vc-ei-edit {
+    flex: none;
+}
+
+.vc-ei-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.vc-ei-tag-delete {
+    height: 28px;
+    min-width: 24px;
+    padding: 0 6px;
+    border: 0;
+    background: none;
+    color: var(--q-sub);
+    font: 600 11px/1 var(--q-display);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 140ms var(--q-ease);
+}
+
+.vc-ei-tag-delete:hover,
+.vc-ei-tag-delete:focus-visible {
+    color: #f04f6e;
+    outline: none;
+}
+
+.vc-ei-tag-input {
+    width: 128px;
+    height: 28px;
+    padding: 0 8px;
+    font-size: 13px;
+}
+
+.vc-ei-hint {
+    flex: 1 1 100%;
+    margin: 0;
+    color: var(--q-t2);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.vc-ei [class*="result_"][data-vc-ei-spoiler] {
     overflow: clip;
-    border-radius: 0;
-    background-color: var(--q-fill-soft) !important;
 }
 
-.vc-ei :is([class*="emojiItem_"], [data-type="sticker"], [class*="categoryItemGuildCategory_"], .vc-ei-saved-item):has(img:not([data-vc-ei-loaded]))::before,
-.vc-ei [class*="result_"][class*="result_"][style*="background-color"]::before,
-.vc-ei [class*="placeholder_"]::before,
-.vc-ei [class*="categoryLoader_"]::before,
-.vc-ei [class*="column_"] > [class*="gif_"]::before,
-.vc-ei-saved-blank::before {
-    content: "";
+.vc-ei [class*="result_"][data-vc-ei-spoiler] :is(img, video, canvas) {
+    filter: blur(18px) brightness(0.6);
+    transition: filter 160ms var(--q-ease);
+}
+
+.vc-ei [class*="result_"][data-vc-ei-spoiler]:is(:hover, [data-focused="true"]) :is(img, video, canvas) {
+    filter: none;
+}
+
+.vc-ei [class*="result_"][data-vc-ei-spoiler]::before {
+    content: "Spoiler";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 2;
+    padding: 6px 10px;
+    translate: -50% -50%;
+    background: var(--q-solid);
+    color: var(--q-bg);
+    font: 600 10px/1 var(--q-display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    pointer-events: none;
+    transition: opacity 160ms var(--q-ease);
+}
+
+.vc-ei [class*="result_"][data-vc-ei-spoiler]:is(:hover, [data-focused="true"])::before {
+    opacity: 0;
+}
+
+.vc-ei [class*="result_"][data-vc-ei-armed]::after {
+    content: "Click again to send";
+    inset: 0;
+    z-index: 3;
+    display: grid;
+    place-items: center;
+    padding: 8px;
+    background: color-mix(in srgb, var(--q-bg) 60%, transparent);
+    box-shadow: inset 0 0 0 2px var(--q-accent);
+    color: var(--q-text);
+    font: 600 11px/1.3 var(--q-display);
+    letter-spacing: 0.14em;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.vc-ei:has([data-vc-ei-editing]) [class*="result_"] {
+    cursor: copy;
+}
+
+.vc-ei [class*="result_"][data-vc-ei-brush] {
+    box-shadow: 0 0 0 2px var(--q-accent), var(--q-glow) !important;
+}
+
+.vc-ei [class*="result_"][data-vc-ei-brush]::after {
+    content: "✓";
+    inset: 6px 6px auto auto;
+    z-index: 3;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    background: var(--q-accent);
+    color: #fff;
+    font: 700 12px/1 var(--q-display);
+}
+
+.vc-ei[data-vc-ei-drop]::after {
+    content: attr(data-vc-ei-drop);
     position: absolute;
     inset: 0;
-    z-index: -1;
-    background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--q-accent) 16%, transparent) 50%, transparent 80%);
-    translate: -100% 0;
+    z-index: 6;
+    display: grid;
+    place-items: center;
+    border: 1px dashed var(--q-accent);
+    background: color-mix(in srgb, var(--q-bg) 82%, transparent);
+    color: var(--q-text);
+    font: 600 12px/1 var(--q-display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
     pointer-events: none;
-}
-
-.full-motion .vc-ei :is([class*="emojiItem_"], [data-type="sticker"], [class*="categoryItemGuildCategory_"], .vc-ei-saved-item):has(img:not([data-vc-ei-loaded]))::before,
-.full-motion .vc-ei [class*="result_"][class*="result_"][style*="background-color"]::before,
-.full-motion .vc-ei [class*="placeholder_"]::before,
-.full-motion .vc-ei [class*="categoryLoader_"]::before,
-.full-motion .vc-ei [class*="column_"] > [class*="gif_"]::before,
-.full-motion .vc-ei-saved-blank::before {
-    animation: vc-ei-shimmer 1.3s var(--q-ease) infinite;
-}
-
-.vc-ei-saved-blank {
-    display: block;
-}
-
-.vc-ei [class*="loadingIndicator_"] {
-    box-sizing: border-box;
-    padding: 16px;
-    background: linear-gradient(100deg, var(--q-fill-soft) 35%, color-mix(in srgb, var(--q-accent) 14%, transparent) 50%, var(--q-fill-soft) 65%) 0 0 / 300% 100%;
-    mask-image: repeating-linear-gradient(90deg, #000 0 64px, transparent 64px 72px), repeating-linear-gradient(#000 0 64px, transparent 64px 72px);
-    mask-composite: intersect;
-    mask-clip: content-box;
-    mask-origin: content-box;
-}
-
-.vc-ei [class*="loadingIndicator_"] > * {
-    visibility: hidden;
-}
-
-.full-motion .vc-ei [class*="loadingIndicator_"] {
-    animation: vc-ei-sweep 1.6s linear infinite;
 }
