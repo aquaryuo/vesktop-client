@@ -248,6 +248,30 @@
     zoom: var(--vc-ei-zoom, 1);
 }
 
+:is(.vc-ei, .vc-ei-emojis) [data-disabled][data-disabled]:has(input[data-mana-component="text-input"]) {
+    --custom-input-background-color: color-mix(in srgb, var(--q-card) 60%, transparent);
+    --custom-input-border-color: var(--q-line);
+    --custom-input-text-color: var(--q-text);
+    --custom-input-border-radius: 0;
+    --custom-input-hover-border-color: var(--q-line-strong);
+    --custom-input-focus-border-color: var(--q-accent);
+    --custom-text-input-height: 40px;
+    --input-placeholder-text-default: var(--q-sub);
+    --icon-strong: var(--q-sub);
+    --icon-subtle: var(--q-sub);
+    font-size: 14px;
+    transition: border-color 140ms var(--q-ease), box-shadow 140ms var(--q-ease);
+}
+
+:is(.vc-ei, .vc-ei-emojis) [data-disabled][data-disabled]:has(input[data-mana-component="text-input"]:focus) {
+    outline: none;
+    box-shadow: inset 0 -2px 0 var(--q-accent), var(--q-glow);
+}
+
+:is(.vc-ei, .vc-ei-emojis) [data-disabled]:has(input[data-mana-component="text-input"]) [class*="clearButton_"]:hover {
+    color: var(--q-text);
+}
+
 :is(.vc-ei, .vc-ei-emojis) [class*="searchBar_"] {
     transition: border-color 140ms var(--q-ease), box-shadow 140ms var(--q-ease);
 }
@@ -498,6 +522,13 @@
 
     .vc-ei-panel {
         border-radius: 0 0 9px 0;
+        corner-shape: bevel;
+    }
+
+    :is(.vc-ei, .vc-ei-emojis) [data-disabled][data-disabled]:has(input[data-mana-component="text-input"]),
+    .vc-ei-select {
+        --custom-input-border-radius: 10px 0 10px 0;
+        border-radius: 10px 0 10px 0;
         corner-shape: bevel;
     }
 }

@@ -568,10 +568,16 @@ export default definePlugin({
         },
         {
             find: "backToFrontPage=",
-            replacement: {
-                match: /(""!==this\.props\.query&&this\.search\(this\.props\.query,(\i\.\i)\.SEARCH\))\}/,
-                replace: "$1,$self.startView(this,$2)}"
-            }
+            replacement: [
+                {
+                    match: /(""!==this\.props\.query&&this\.search\(this\.props\.query,(\i\.\i)\.SEARCH\))\}/,
+                    replace: "$1,$self.startView(this,$2)}"
+                },
+                {
+                    match: /(null!=(\i))(&&\(\i=\(0,\i\.jsx\)\(\i\.\i,\{onClick:this\.handleClearQuery)/,
+                    replace: "$1&&!$self.isStart($2)$3"
+                }
+            ]
         },
         {
             find: "oncanplay=this.handleCanPlay",
@@ -640,6 +646,11 @@ export default definePlugin({
             if (!picker.props.hideFavorites) picker.handleSelectItem(types.FAVORITES);
         } else if (view === "trending") picker.handleSelectItem(types.TRENDING_GIFS);
         else if (view.startsWith(CATEGORY)) picker.handleSelectItem(types.TRENDING_CATEGORY, view.slice(CATEGORY.length));
+    },
+
+    isStart(type: string) {
+        const view = settings.store.gifStart;
+        return view === "favorites" ? type === "Favorites" : view === "trending" ? type === "Trending" : view.startsWith(CATEGORY) && type === "Category";
     },
 
     columns(width: number, itemWidth: number, max: number) {
