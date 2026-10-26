@@ -86,6 +86,8 @@ jobs:
 
             - name: Publish the release
               run: |
+                  git tag -f devbuild
+                  git push -f origin refs/tags/devbuild
                   if ! gh release view devbuild > /dev/null 2>&1; then
                       gh release create devbuild --title "DevBuild $HASH" --notes "Vencord with aquaryuo's plugins. The README says how to install it." --latest
                   fi
