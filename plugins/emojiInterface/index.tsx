@@ -529,6 +529,27 @@ function freeze(drawer: HTMLElement) {
     document.addEventListener("mouseup", done, true);
 }
 
+let keyInPicker = false;
+const focusListeners = new WeakMap<(e: Event) => void, (e: Event) => void>();
+
+function trackInput(e: Event) {
+    keyInPicker = e.type === "keydown" && !!(e.target as Element | null)?.closest?.(".vc-ei");
+}
+
+const focusScope = {
+    get body() { return document.body; },
+    get activeElement() { return document.activeElement; },
+    addEventListener(type: string, listener: (e: Event) => void, options?: AddEventListenerOptions) {
+        let wrapped = focusListeners.get(listener);
+        if (!wrapped) focusListeners.set(listener, wrapped = (e: Event) => { if (keyInPicker) listener(e); });
+        document.addEventListener(type, wrapped, options);
+    },
+    removeEventListener(type: string, listener: (e: Event) => void, options?: EventListenerOptions) {
+        const wrapped = focusListeners.get(listener);
+        if (wrapped) document.removeEventListener(type, wrapped, options);
+    }
+};
+
 const grids = new Set<{ forceUpdate(): void; }>();
 const outsideHandlers = new WeakMap<(e: MouseEvent) => void, (e: MouseEvent) => void>();
 const DRAGGABLE = 'img, video, a[href], [draggable="true"]';
@@ -899,6 +920,10 @@ export default definePlugin({
                     replace: '$1.removeEventListener("mousedown",$self.outside($2)),$1.removeEventListener("contextmenu",$self.outside($2))'
                 },
                 {
+                    match: /(CLOSE_GIF_PICKER,\i\)\}\},\[[^\]]*\]\),\(0,\i\.\i\)\()(\i)\)/,
+                    replace: "$1$2,{attachTo:$self.focusScope})"
+                },
+                {
                     match: /showAddEmojiButton:null==\i\|\|null!=\i\.guild_id/,
                     replace: "showAddEmojiButton:!0"
                 },
@@ -1063,6 +1088,8 @@ export default definePlugin({
         link.rel = "stylesheet";
         link.href = FONT_URL;
         document.head.append(link);
+        window.addEventListener("keydown", trackInput, true);
+        window.addEventListener("pointerdown", trackInput, true);
         applyGap();
         if (settings.store.defaultsVersion < 1) {
             settings.store.columns = 3;
@@ -1073,6 +1100,8 @@ export default definePlugin({
 
     stop() {
         document.getElementById("vc-ei-font")?.remove();
+        window.removeEventListener("keydown", trackInput, true);
+        window.removeEventListener("pointerdown", trackInput, true);
         document.documentElement.style.removeProperty("--vc-ei-gap");
         clearTimeout(nudgeTimer);
         restoreCloner();
@@ -1080,6 +1109,7 @@ export default definePlugin({
         stopGifs();
     },
 
+    focusScope,
     allowGif,
     gifFlags,
     gifContent,
