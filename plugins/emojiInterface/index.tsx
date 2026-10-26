@@ -711,12 +711,15 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
             if ((e.target as Element).matches?.('[class*="resizeHandle_"]')) freeze(drawer);
         };
         const accepts = (e: DragEvent) => !!e.dataTransfer && ["Files", "text/uri-list", "text/plain"].some(type => e.dataTransfer!.types.includes(type));
+        let dropTimer = 0;
         const over = (e: DragEvent) => {
             if (!accepts(e)) return;
             e.preventDefault();
             e.stopPropagation();
             e.dataTransfer!.dropEffect = "copy";
             drawer.dataset.vcEiDrop = DROP_TEXT[dropTarget(drawer)];
+            clearTimeout(dropTimer);
+            dropTimer = window.setTimeout(() => delete drawer.dataset.vcEiDrop, 1000);
         };
         const leave = (e: DragEvent) => {
             if (!drawer.contains(e.relatedTarget as Node | null)) delete drawer.dataset.vcEiDrop;
@@ -743,6 +746,7 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
             drawer.removeEventListener("dragover", over, true);
             drawer.removeEventListener("dragleave", leave, true);
             drawer.removeEventListener("drop", drop, true);
+            clearTimeout(dropTimer);
             hovered = null;
             setPanel("");
         };

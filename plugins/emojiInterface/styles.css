@@ -1319,7 +1319,6 @@
     font: 600 12px/1 var(--q-display);
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    pointer-events: none;
 }
 
 .vc-ei-empty {
