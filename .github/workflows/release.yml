@@ -7,6 +7,7 @@ on:
         paths:
             - plugins/**
             - vencord.pin
+            - equicord.pin
             - .github/workflows/release.yml
     schedule:
         - cron: "23 4 * * *"
@@ -20,6 +21,7 @@ concurrency:
 
 env:
     FORCE_COLOR: true
+    COREPACK_ENABLE_DOWNLOAD_PROMPT: 0
 
 jobs:
     bump:
@@ -30,18 +32,28 @@ jobs:
         steps:
             - uses: actions/checkout@v7
 
-            - name: Pin the newest Vencord commit
+            - name: Pin the newest Vencord and Equicord commits
               id: pin
               run: |
-                  latest=$(git ls-remote https://github.com/Vendicated/Vencord refs/heads/main | cut -f1)
-                  if [ -z "$latest" ] || [ "$latest" = "$(tr -d '[:space:]' < vencord.pin)" ]; then
+                  changes=()
+                  pin() {
+                      latest=$(git ls-remote "https://github.com/$2" refs/heads/main | cut -f1)
+                      if [ -n "$latest" ] && [ "$latest" != "$(tr -d '[:space:]' < "$1.pin")" ]; then
+                          echo "$latest" > "$1.pin"
+                          changes+=("$3 to ${latest:0:7}")
+                      fi
+                  }
+                  pin vencord Vendicated/Vencord Vencord
+                  pin equicord Equicord/Equicord Equicord
+                  if [ ${#changes[@]} -eq 0 ]; then
                       echo "changed=false" >> "$GITHUB_OUTPUT"
                       exit 0
                   fi
-                  echo "$latest" > vencord.pin
                   git config user.name aquaryuo
                   git config user.email 269693811+aquaryuo@users.noreply.github.com
-                  git commit -am "Update Vencord to ${latest:0:7}"
+                  message="Update ${changes[0]}"
+                  [ ${#changes[@]} -eq 2 ] && message="$message and ${changes[1]}"
+                  git commit -am "$message"
                   git push
                   echo "changed=true" >> "$GITHUB_OUTPUT"
 
@@ -54,27 +66,25 @@ jobs:
               with:
                   ref: main
 
-            - name: Fetch the pinned Vencord and add the plugins
-              id: source
-              run: |
-                  git init -q vencord
-                  git -C vencord fetch -q --depth 1 https://github.com/Vendicated/Vencord "$(tr -d '[:space:]' < vencord.pin)"
-                  git -C vencord checkout -q FETCH_HEAD
-                  mkdir -p vencord/src/userplugins
-                  cp -r plugins/. vencord/src/userplugins/
-                  echo "hash=$(git rev-parse HEAD | cut -c1-7)" >> "$GITHUB_OUTPUT"
-
-            - uses: pnpm/action-setup@v6
-              with:
-                  package_json_file: vencord/package.json
-
             - uses: actions/setup-node@v6
               with:
                   node-version: 24
-                  cache: pnpm
-                  cache-dependency-path: vencord/pnpm-lock.yaml
 
-            - name: Build
+            - name: Fetch the pinned Vencord and Equicord and add the plugins
+              id: source
+              run: |
+                  corepack enable
+                  for name in vencord:Vendicated/Vencord equicord:Equicord/Equicord; do
+                      dir=${name%%:*}
+                      git init -q "$dir"
+                      git -C "$dir" fetch -q --depth 1 "https://github.com/${name#*:}" "$(tr -d '[:space:]' < "$dir.pin")"
+                      git -C "$dir" checkout -q FETCH_HEAD
+                      mkdir -p "$dir/src/userplugins"
+                      cp -r plugins/. "$dir/src/userplugins/"
+                  done
+                  echo "hash=$(git rev-parse HEAD | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
+            - name: Build Vencord
               working-directory: vencord
               run: |
                   pnpm install --frozen-lockfile
@@ -84,14 +94,23 @@ jobs:
                   VENCORD_REMOTE: ${{ github.repository }}
                   VENCORD_HASH: ${{ steps.source.outputs.hash }}
 
+            - name: Build Equicord
+              working-directory: equicord
+              run: |
+                  pnpm install --frozen-lockfile
+                  pnpm build --standalone
+              env:
+                  EQUICORD_REMOTE: ${{ github.repository }}
+                  EQUICORD_HASH: ${{ steps.source.outputs.hash }}
+
             - name: Publish the release
               run: |
                   git tag -f devbuild
                   git push -f origin refs/tags/devbuild
                   if ! gh release view devbuild > /dev/null 2>&1; then
-                      gh release create devbuild --title "DevBuild $HASH" --notes "Vencord with aquaryuo's plugins. The README says how to install it." --latest
+                      gh release create devbuild --title "DevBuild $HASH" --notes "Vencord and Equicord with aquaryuo's plugins. The README says how to install it." --latest
                   fi
-                  gh release upload devbuild --clobber $(find vencord/dist -maxdepth 1 -type f)
+                  gh release upload devbuild --clobber $(find vencord/dist -maxdepth 1 -type f) equicord/dist/desktop.asar equicord/dist/equibop.asar
                   gh release edit devbuild --title "DevBuild $HASH" --latest
               env:
                   GH_TOKEN: ${{ github.token }}
