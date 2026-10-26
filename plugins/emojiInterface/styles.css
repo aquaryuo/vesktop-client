@@ -1440,3 +1440,19 @@
     column-gap: var(--vc-ei-gap, 4px);
     margin-bottom: var(--vc-ei-gap, 4px);
 }
+
+.vc-ei [data-type="sticker"] [class*="assetWrapperMasked_"] {
+    -webkit-mask: none;
+    mask: none;
+}
+
+.vc-ei [data-type="sticker"][class*="stickerInspected_"],
+.vc-ei-emojis [class*="emojiItem_"][class*="emojiItemSelected_"] {
+    z-index: 3;
+}
+
+.vc-ei #sticker-picker-grid [class*="row_"],
+.vc-ei #sticker-picker-grid [data-type="sticker"],
+.vc-ei #sticker-picker-grid [class*="assetWrapper_"] {
+    overflow: visible;
+}
