@@ -1,0 +1,96 @@
+name: Release
+
+on:
+    push:
+        branches:
+            - main
+        paths:
+            - plugins/**
+            - vencord.pin
+            - .github/workflows/release.yml
+    schedule:
+        - cron: "23 4 * * *"
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+concurrency:
+    group: release
+
+env:
+    FORCE_COLOR: true
+
+jobs:
+    bump:
+        if: github.event_name != 'push'
+        runs-on: ubuntu-latest
+        outputs:
+            changed: ${{ steps.pin.outputs.changed }}
+        steps:
+            - uses: actions/checkout@v7
+
+            - name: Pin the newest Vencord commit
+              id: pin
+              run: |
+                  latest=$(git ls-remote https://github.com/Vendicated/Vencord refs/heads/main | cut -f1)
+                  if [ -z "$latest" ] || [ "$latest" = "$(tr -d '[:space:]' < vencord.pin)" ]; then
+                      echo "changed=false" >> "$GITHUB_OUTPUT"
+                      exit 0
+                  fi
+                  echo "$latest" > vencord.pin
+                  git config user.name aquaryuo
+                  git config user.email 269693811+aquaryuo@users.noreply.github.com
+                  git commit -am "Update Vencord to ${latest:0:7}"
+                  git push
+                  echo "changed=true" >> "$GITHUB_OUTPUT"
+
+    release:
+        needs: bump
+        if: ${{ !cancelled() && needs.bump.result != 'failure' && (github.event_name != 'schedule' || needs.bump.outputs.changed == 'true') }}
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  ref: main
+
+            - name: Fetch the pinned Vencord and add the plugins
+              id: source
+              run: |
+                  git init -q vencord
+                  git -C vencord fetch -q --depth 1 https://github.com/Vendicated/Vencord "$(tr -d '[:space:]' < vencord.pin)"
+                  git -C vencord checkout -q FETCH_HEAD
+                  mkdir -p vencord/src/userplugins
+                  cp -r plugins/. vencord/src/userplugins/
+                  echo "hash=$(git rev-parse HEAD | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
+            - uses: pnpm/action-setup@v6
+              with:
+                  package_json_file: vencord/package.json
+
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+                  cache: pnpm
+                  cache-dependency-path: vencord/pnpm-lock.yaml
+
+            - name: Build
+              working-directory: vencord
+              run: |
+                  pnpm install --frozen-lockfile
+                  pnpm build --standalone
+                  echo "{}" > dist/package.json
+              env:
+                  VENCORD_REMOTE: ${{ github.repository }}
+                  VENCORD_HASH: ${{ steps.source.outputs.hash }}
+
+            - name: Publish the release
+              run: |
+                  if ! gh release view devbuild > /dev/null 2>&1; then
+                      gh release create devbuild --title "DevBuild $HASH" --notes "Vencord with aquaryuo's plugins. The README says how to install it." --latest
+                  fi
+                  gh release upload devbuild --clobber $(find vencord/dist -maxdepth 1 -type f)
+                  gh release edit devbuild --title "DevBuild $HASH" --latest
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  HASH: ${{ steps.source.outputs.hash }}
