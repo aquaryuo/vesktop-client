@@ -1350,3 +1350,43 @@
 .vc-ei #sticker-picker-grid {
     --custom-stickers-constants-sticker-picker-preview-margin: 4px;
 }
+
+.vc-ei #sticker-picker-grid {
+    --custom-stickers-constants-sticker-picker-preview-border-radius: 0;
+}
+
+.vc-ei #sticker-picker-grid [class*="row_"] {
+    overflow: visible;
+}
+
+.vc-ei [data-type="sticker"][class*="sticker_"],
+.vc-ei [data-type="sticker"] [class*="inspectedIndicator_"] {
+    border-radius: 0;
+}
+
+.vc-ei [data-type="sticker"] [class*="inspectedIndicator_"] {
+    mask: none;
+    transition: background-color 140ms var(--q-ease), box-shadow 140ms var(--q-ease);
+}
+
+.vc-ei [data-type="sticker"][class*="stickerInspected_"] [class*="inspectedIndicator_"] {
+    background-color: color-mix(in srgb, var(--q-accent) 18%, transparent);
+    box-shadow: inset 0 -2px 0 var(--q-accent);
+}
+
+.full-motion .vc-ei [data-type="sticker"] [class*="stickerNode_"] {
+    transition: opacity 250ms ease, scale 160ms var(--q-ease);
+}
+
+.full-motion .vc-ei [data-type="sticker"][class*="stickerInspected_"] [class*="stickerNode_"] {
+    scale: 1.08;
+}
+
+.full-motion .vc-ei [class*="result_"][class*="result_"] {
+    transition: scale 160ms var(--q-ease), box-shadow 160ms var(--q-ease);
+}
+
+.full-motion .vc-ei [class*="result_"][class*="result_"]:is(:hover, [data-focused="true"]) {
+    z-index: 2;
+    scale: 1.04;
+}
