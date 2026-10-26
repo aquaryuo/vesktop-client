@@ -33,6 +33,7 @@ let loaded: Promise<void> | undefined;
 let editing = false;
 let brush: string[] = [];
 let filter = "";
+let scope: Set<string> | null = null;
 let armed = "";
 let armTimer: ReturnType<typeof setTimeout> | undefined;
 let picker: { forceUpdate(): void; } | null = null;
@@ -161,7 +162,17 @@ export function gifContent(gif: Gif & { url: string; }) {
 }
 
 export function filterGifs<T extends Gif>(list: T[]) {
-    return filter && !editing ? list.filter(gif => has(gif, filter)) : list;
+    if (editing) return scope ? list.filter(gif => !!gif.url && scope!.has(gif.url)) : list;
+    return filter ? list.filter(gif => has(gif, filter)) : list;
+}
+
+function toggleEditing() {
+    editing = !editing;
+    brush = [];
+    const tagged = editing && filter ? Object.keys(data.gifs).filter(url => data.gifs[url].includes(filter)) : [];
+    scope = tagged.length ? new Set(tagged) : null;
+    disarm();
+    refresh();
 }
 
 function TagEmpty({ name, searching }: { name: string; searching: boolean; }) {
@@ -200,6 +211,7 @@ export function pickerGone(instance: { forceUpdate(): void; }) {
     picker = null;
     editing = false;
     brush = [];
+    scope = null;
     filter = armed = renaming = "";
 }
 
@@ -209,6 +221,7 @@ export function stopGifs() {
     picker = null;
     editing = false;
     brush = [];
+    scope = null;
     filter = armed = renaming = "";
 }
 
@@ -308,15 +321,17 @@ export function GifTools() {
     const tags = allTags();
     const names = tags.filter(tag => brush.includes(tag.id)).map(tag => tag.name);
     const brushName = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
+    const scopeName = scope && tags.find(tag => tag.id === filter)?.name;
+    const hint = brushName ? `Click GIFs to add or remove ${brushName}.` : "Pick one or more tags, then click GIFs to tag them.";
     return (
         <div className="vc-ei-giftools" data-vc-ei-editing={editing || undefined}>
             <div className="vc-ei-chips" role="group" aria-label={editing ? "Tags to apply, pick one or more" : "Filter favorites by tag"}>
                 {!editing && <button type="button" className="vc-ei-choice" aria-pressed={!filter} onClick={() => { filter = ""; refresh(); }}>All</button>}
                 {tags.map(tag => <TagChip key={tag.id} tag={tag} />)}
                 {editing && <NewTag />}
-                <button type="button" className="vc-ei-choice vc-ei-edit" aria-pressed={editing} onClick={() => { editing = !editing; brush = []; disarm(); refresh(); }}>{editing ? "Done" : "Edit"}</button>
+                <button type="button" className="vc-ei-choice vc-ei-edit" aria-pressed={editing} onClick={toggleEditing}>{editing ? "Done" : "Edit"}</button>
             </div>
-            {editing && <p className="vc-ei-hint" role="status">{brushName ? `Click GIFs to add or remove ${brushName}.` : "Pick one or more tags, then click GIFs to tag them."}</p>}
+            {editing && <p className="vc-ei-hint" role="status">{scopeName ? `Editing GIFs tagged ${scopeName}. ${hint}` : hint}</p>}
         </div>
     );
 }
