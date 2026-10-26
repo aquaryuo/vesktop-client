@@ -1371,7 +1371,7 @@
 }
 
 .vc-ei #sticker-picker-grid {
-    --custom-stickers-constants-sticker-picker-preview-margin: 4px;
+    --custom-stickers-constants-sticker-picker-preview-margin: var(--vc-ei-gap, 4px);
 }
 
 .vc-ei #sticker-picker-grid {
@@ -1434,4 +1434,9 @@
     letter-spacing: 0.12em;
     text-transform: uppercase;
     overflow-wrap: anywhere;
+}
+
+.vc-ei-emojis [class*="emojiListRow_"][class*="emojiListRow_"] {
+    column-gap: var(--vc-ei-gap, 4px);
+    margin-bottom: var(--vc-ei-gap, 4px);
 }

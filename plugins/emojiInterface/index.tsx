@@ -18,7 +18,7 @@ const COLUMNS = [0, 2, 3, 4, 5, 6, 7, 8];
 const CHECK_TIMEOUT = 15000;
 const CHECK_WORKERS = 6;
 const CATEGORY = "category:";
-const GIF_GAP = 4;
+const GAPS = [0, 2, 4, 6, 8, 12, 16];
 const SCROLL_SLACK = 2;
 const BOOKMARK = "M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z";
 const PLACES: ["tab" | "inline" | "both", string][] = [["tab", "Saved tab"], ["inline", "Inside tabs"], ["both", "Both"]];
@@ -56,6 +56,12 @@ export const settings = definePluginSettings({
             { label: "Fit to width", value: 0 },
             ...[2, 3, 4, 5, 6, 7, 8].map(n => ({ label: String(n), value: n, default: n === 3 }))
         ]
+    },
+    gap: {
+        type: OptionType.SELECT,
+        description: "Gap between GIFs, stickers and emojis",
+        options: GAPS.map(n => ({ label: `${n} px`, value: n, default: n === 4 })),
+        onChange: () => applyGap()
     },
     hoverPlay: {
         type: OptionType.BOOLEAN,
@@ -491,6 +497,16 @@ function setColumns(columns: number) {
     grids.forEach(grid => grid.forceUpdate());
 }
 
+function applyGap() {
+    document.documentElement.style.setProperty("--vc-ei-gap", `${settings.store.gap}px`);
+    grids.forEach(grid => grid.forceUpdate());
+}
+
+function setGap(gap: number) {
+    settings.store.gap = gap;
+    applyGap();
+}
+
 function setHoverPlay(on: boolean) {
     settings.store.hoverPlay = on;
     for (const video of document.querySelectorAll<HTMLVideoElement>(".vc-ei video")) {
@@ -582,7 +598,7 @@ function Choices<T extends string>({ label, value, options, onChange }: { label:
 }
 
 function Panel({ onReset }: { onReset(): void; }) {
-    const { columns, hoverPlay, gifGuard, autoAnimate, scale, savedPlace, savedSend } = settings.use(["columns", "hoverPlay", "gifGuard", "autoAnimate", "scale", "savedPlace", "savedSend"]);
+    const { columns, gap, hoverPlay, gifGuard, autoAnimate, scale, savedPlace, savedSend } = settings.use(["columns", "gap", "hoverPlay", "gifGuard", "autoAnimate", "scale", "savedPlace", "savedSend"]);
     return (
         <div className="vc-ei-panel" id="vc-ei-panel" role="tabpanel" aria-labelledby="vc-ei-tab">
             <div className="vc-ei-option">
@@ -590,6 +606,14 @@ function Panel({ onReset }: { onReset(): void; }) {
                 <div className="vc-ei-choices" role="group" aria-label="GIFs per row">
                     {COLUMNS.map(n => (
                         <button key={n} type="button" className="vc-ei-choice" aria-pressed={columns === n} onClick={() => setColumns(n)}>{n || "Fit"}</button>
+                    ))}
+                </div>
+            </div>
+            <div className="vc-ei-option">
+                <span className="vc-ei-label">Gap between items</span>
+                <div className="vc-ei-choices" role="group" aria-label="Gap between items, in pixels">
+                    {GAPS.map(n => (
+                        <button key={n} type="button" className="vc-ei-choice" aria-label={`${n} pixels`} aria-pressed={gap === n} onClick={() => setGap(n)}>{n}</button>
                     ))}
                 </div>
             </div>
@@ -807,7 +831,7 @@ export default definePlugin({
                 },
                 {
                     match: /listWidth:(\i),listPaddingRight:(\i),stickerNodeMargin:\i\?\i:\i,stickerNodeWidth:(\i\?\i:\i)/,
-                    replace: `listWidth:$1,listPaddingRight:$2,stickerNodeMargin:${GIF_GAP},stickerNodeWidth:$self.stickerNode($1,$2,$3)`
+                    replace: `listWidth:$1,listPaddingRight:$2,stickerNodeMargin:$self.gap(),stickerNodeWidth:$self.stickerNode($1,$2,$3)`
                 },
                 {
                     match: /stickerSize:((\i)>\i\?\i:\i)(?=,stickerPadding:1)/,
@@ -841,6 +865,14 @@ export default definePlugin({
                 {
                     match: /\?\(0,\i\.jsx\)\(\i,\{channel:\i,closePopout:\i\}\):null(?=\])/,
                     replace: '$&,$self.renderStrip("emoji")'
+                },
+                {
+                    match: /Math\.floor\((\i)\/\((\i)\+2\*(\i)\)\)/,
+                    replace: "Math.floor(($1+$self.gap())/($2+2*$3+$self.gap()))"
+                },
+                {
+                    match: /rowHeight:(\i)\+2\*(\i),sectionHeaderHeight/,
+                    replace: "rowHeight:$1+2*$2+$self.gap(),sectionHeaderHeight"
                 },
                 {
                     match: /(onActiveCategoryIndexChange:function\(\i\)\{[^}]*\},scrollOffset:)0/,
@@ -885,7 +917,7 @@ export default definePlugin({
                 },
                 {
                     match: /itemGutter:12/g,
-                    replace: `itemGutter:${GIF_GAP}`
+                    replace: "itemGutter:$self.gap()"
                 }
             ]
         },
@@ -925,7 +957,7 @@ export default definePlugin({
                 },
                 {
                     match: /itemGutter:12/g,
-                    replace: `itemGutter:${GIF_GAP}`
+                    replace: "itemGutter:$self.gap()"
                 }
             ]
         },
@@ -950,6 +982,7 @@ export default definePlugin({
         link.rel = "stylesheet";
         link.href = FONT_URL;
         document.head.append(link);
+        applyGap();
         if (settings.store.defaultsVersion < 1) {
             settings.store.columns = 3;
             settings.store.hoverPlay = false;
@@ -959,6 +992,7 @@ export default definePlugin({
 
     stop() {
         document.getElementById("vc-ei-font")?.remove();
+        document.documentElement.style.removeProperty("--vc-ei-gap");
         clearTimeout(nudgeTimer);
         restoreCloner();
         revokeUrls();
@@ -973,11 +1007,16 @@ export default definePlugin({
     untrackGif,
     pickerGone,
 
+    gap() {
+        return settings.store.gap;
+    },
+
     stickerNode(width: number, pad: number, base: number) {
         if (!width) return base;
         const room = width - pad;
-        const cols = Math.max(2, Math.round((room + GIF_GAP) / (base + GIF_GAP)));
-        const node = Math.max(24, Math.floor((room - GIF_GAP * (cols - 1)) / cols));
+        const gap = settings.store.gap;
+        const cols = Math.max(2, Math.round((room + gap) / (base + gap)));
+        const node = Math.max(24, Math.floor((room - gap * (cols - 1)) / cols));
         stickerGrid = { width, node };
         return node;
     },
@@ -987,7 +1026,7 @@ export default definePlugin({
     },
 
     stickerRow(width: number, fallback: number) {
-        return stickerGrid.width === width ? stickerGrid.node + GIF_GAP : fallback;
+        return stickerGrid.width === width ? stickerGrid.node + settings.store.gap : fallback;
     },
 
     renderTagEmpty(query?: string) {
