@@ -3,12 +3,16 @@ import ErrorBoundary from "@components/ErrorBoundary";
 import { classes } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { chooseFile, saveFile } from "@utils/web";
-import { EmojiStore, UserSettingsActionCreators, UserStore, useLayoutEffect, useRef, useState } from "@webpack/common";
+import { EmojiStore, FluxDispatcher, UserSettingsActionCreators, UserStore, useLayoutEffect, useRef, useState } from "@webpack/common";
 import type { ImgHTMLAttributes, MouseEvent as ReactMouseEvent, SyntheticEvent } from "react";
 
 import managedStyle from "./styles.css?managed";
 
 const MIN_HEIGHT = 280;
+const BASE_WIDTH = 498;
+const MAX_ZOOM = 2;
+const COLUMNS = [0, 2, 3, 4, 5, 6, 7, 8];
+const COG = "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0";
 const MAX_EMOJIS = 250;
 const MAX_GIF_BYTES = 762880;
 const FONT_URL = "https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600&display=swap";
@@ -46,6 +50,11 @@ const settings = definePluginSettings({
     hoverPlay: {
         type: OptionType.BOOLEAN,
         description: "Play GIFs in the picker only while you hover them",
+        default: true
+    },
+    scale: {
+        type: OptionType.BOOLEAN,
+        description: "Size stickers and emojis to the picker's width",
         default: true
     },
     height: {
@@ -196,14 +205,92 @@ function fit(section: HTMLElement, height: number) {
     return Math.round(Math.max(MIN_HEIGHT, Math.min(height, section.getBoundingClientRect().bottom - 8, innerHeight - 16)));
 }
 
-function Handles({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; side: string; }) {
+const grids = new Set<{ forceUpdate(): void; }>();
+let nudgeTimer: ReturnType<typeof setTimeout> | undefined;
+
+function nudge() {
+    clearTimeout(nudgeTimer);
+    nudgeTimer = setTimeout(() => dispatchEvent(new Event("resize")), 150);
+}
+
+function zoom(drawer: HTMLElement) {
+    const value = settings.store.scale ? String(Math.min(MAX_ZOOM, Math.max(1, drawer.offsetWidth / BASE_WIDTH))) : "";
+    if (drawer.style.getPropertyValue("--vc-ei-zoom") === value) return;
+    if (value) drawer.style.setProperty("--vc-ei-zoom", value);
+    else drawer.style.removeProperty("--vc-ei-zoom");
+    nudge();
+}
+
+function setColumns(columns: number) {
+    settings.store.columns = columns;
+    grids.forEach(grid => grid.forceUpdate());
+}
+
+function setHoverPlay(on: boolean) {
+    settings.store.hoverPlay = on;
+    for (const video of document.querySelectorAll<HTMLVideoElement>(".vc-ei video")) {
+        video.autoplay = !on;
+        if (on) video.pause();
+        else video.play().catch(() => { });
+    }
+}
+
+function Option({ label, value, onChange }: { label: string; value: boolean; onChange(value: boolean): void; }) {
+    return (
+        <div className="vc-ei-option">
+            <span className="vc-ei-label">{label}</span>
+            <button type="button" className="vc-ei-choice" aria-label={label} aria-pressed={value} onClick={() => onChange(!value)}>{value ? "On" : "Off"}</button>
+        </div>
+    );
+}
+
+function Panel({ onReset }: { onReset(): void; }) {
+    const { columns, hoverPlay, scale } = settings.use(["columns", "hoverPlay", "scale"]);
+    return (
+        <div className="vc-ei-panel" id="vc-ei-panel" role="group" aria-label="Picker settings">
+            <div className="vc-ei-option">
+                <span className="vc-ei-label">GIFs per row</span>
+                <div className="vc-ei-choices" role="group" aria-label="GIFs per row">
+                    {COLUMNS.map(n => (
+                        <button key={n} type="button" className="vc-ei-choice" aria-pressed={columns === n} onClick={() => setColumns(n)}>{n || "Fit"}</button>
+                    ))}
+                </div>
+            </div>
+            <Option label="Play GIFs only on hover" value={hoverPlay} onChange={setHoverPlay} />
+            <Option label="Size stickers and emojis to the picker" value={scale} onChange={on => settings.store.scale = on} />
+            <div className="vc-ei-option">
+                <span className="vc-ei-label">Picker size</span>
+                <button type="button" className="vc-ei-button" onClick={onReset}>Reset size</button>
+            </div>
+            <Transfer />
+        </div>
+    );
+}
+
+function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; side: string; }) {
     const ref = useRef<HTMLDivElement>(null);
+    const [open, setOpen] = useState(false);
+    const { scale } = settings.use(["scale"]);
     const section = () => ref.current?.closest("section");
 
     useLayoutEffect(() => {
         const el = section();
         if (el && settings.store.height) el.style.height = `${fit(el, settings.store.height)}px`;
     }, []);
+
+    useLayoutEffect(() => {
+        const drawer = ref.current?.parentElement;
+        if (!drawer) return;
+        zoom(drawer);
+        const observer = new ResizeObserver(() => zoom(drawer));
+        observer.observe(drawer);
+        return () => observer.disconnect();
+    }, [scale]);
+
+    function toggle() {
+        setOpen(!open);
+        nudge();
+    }
 
     function drag(e: ReactMouseEvent) {
         const el = section();
@@ -220,16 +307,27 @@ function Handles({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void;
         addEventListener("mouseup", up);
     }
 
-    function reset() {
+    function resetHeight() {
         const el = section();
         if (el) el.style.height = "";
         settings.store.height = 0;
     }
 
+    function resetSize() {
+        resetHeight();
+        FluxDispatcher.dispatch({ type: "UNSYNCED_USER_SETTINGS_UPDATE", settings: { expressionPickerWidth: "min" } });
+        const drawer = ref.current?.parentElement;
+        if (drawer) drawer.style.width = `${BASE_WIDTH}px`;
+    }
+
     return (
         <>
-            <div ref={ref} className="vc-ei-edge" onMouseDown={e => { e.stopPropagation(); drag(e); }} onDoubleClick={reset} />
+            <div ref={ref} className="vc-ei-edge" onMouseDown={e => { e.stopPropagation(); drag(e); }} onDoubleClick={resetHeight} />
             <div className={`vc-ei-corner vc-ei-corner-${side}`} style={{ [side]: -4 }} onMouseDown={e => { drag(e); onWidthDown(e); }} />
+            <button type="button" className="vc-ei-cog" aria-label="Picker settings" aria-expanded={open} aria-controls="vc-ei-panel" onClick={toggle}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d={COG} /></svg>
+            </button>
+            {open && <Panel onReset={resetSize} />}
         </>
     );
 }
@@ -237,7 +335,8 @@ function Handles({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void;
 function GifImage(props: ImgHTMLAttributes<HTMLImageElement>) {
     const canvas = useRef<HTMLCanvasElement>(null);
     const [ready, setReady] = useState(false);
-    if (!settings.store.hoverPlay) return <img {...props} />;
+    const { hoverPlay } = settings.use(["hoverPlay"]);
+    if (!hoverPlay) return <img {...props} />;
 
     function grab(e: SyntheticEvent<HTMLImageElement>) {
         const img = e.currentTarget, el = canvas.current;
@@ -284,7 +383,11 @@ export default definePlugin({
                 },
                 {
                     match: /\(0,\i\.jsx\)\("div",\{className:\i\.\i,onMouseDown:(\i),style:\{\[(\i)\]:-2\}\}\)/,
-                    replace: "$&,$self.renderHandles($1,$2)"
+                    replace: "$&,$self.renderFrame($1,$2)"
+                },
+                {
+                    match: /emojiSize:null!=(\i)&&\1<(\i)\?/,
+                    replace: "emojiSize:$self.settings.store.scale||null!=$1&&$1<$2?"
                 }
             ]
         },
@@ -296,15 +399,11 @@ export default definePlugin({
             }
         },
         {
-            find: "desiredItemWidth:200,maxColumns:8",
+            find: "oncanplay=this.handleCanPlay",
             replacement: [
                 {
-                    match: /desiredItemWidth:200,maxColumns:8/,
-                    replace: "...$self.grid(8)"
-                },
-                {
-                    match: /(\i)\.autoplay=!0/,
-                    replace: "$1.autoplay=!$self.settings.store.hoverPlay"
+                    match: /(\i)\.oncanplay=this\.handleCanPlay,/,
+                    replace: "$1.autoplay=!$self.settings.store.hoverPlay,$&"
                 },
                 {
                     match: /"img",(?=\{src:\i\(\i\),width:)/,
@@ -313,11 +412,17 @@ export default definePlugin({
             ]
         },
         {
-            find: "desiredItemWidth:200,maxColumns:6",
-            replacement: {
-                match: /desiredItemWidth:200,maxColumns:6/,
-                replace: "...$self.grid(6)"
-            }
+            find: "static defaultProps={desiredItemWidth:200}",
+            replacement: [
+                {
+                    match: /function (\i)\((\i),(\i),(\i)\)\{return Math\.min\(Math\.max\(Math\.floor\(\2\/\3\),1\),\4\)\}/,
+                    replace: "function $1($2,$3,$4){return $self.columns($2,$3,$4)}"
+                },
+                {
+                    match: /state=\{columns:/,
+                    replace: "componentDidMount(){this.vcEi=$self.listen(this)}componentWillUnmount(){this.vcEi?.()}$&"
+                }
+            ]
         }
     ],
 
@@ -334,19 +439,24 @@ export default definePlugin({
         document.getElementById("vc-ei-font")?.remove();
         document.removeEventListener("pointerover", onHover);
         hovered = null;
+        clearTimeout(nudgeTimer);
     },
 
-    renderHandles(onWidthDown: (e: ReactMouseEvent) => void, side: string) {
+    renderFrame(onWidthDown: (e: ReactMouseEvent) => void, side: string) {
         return (
             <ErrorBoundary noop>
-                <Handles onWidthDown={onWidthDown} side={side} />
+                <Frame onWidthDown={onWidthDown} side={side} />
             </ErrorBoundary>
         );
     },
 
-    grid(max: number) {
-        const { columns } = settings.store;
-        return columns ? { desiredItemWidth: 1, maxColumns: columns } : { desiredItemWidth: 200, maxColumns: max };
+    columns(width: number, itemWidth: number, max: number) {
+        return settings.store.columns || Math.min(Math.max(Math.floor(width / itemWidth), 1), max);
+    },
+
+    listen(grid: { forceUpdate(): void; }) {
+        grids.add(grid);
+        return () => grids.delete(grid);
     },
 
     GifImage: ErrorBoundary.wrap(GifImage, { noop: true })
