@@ -1068,7 +1068,7 @@ export default definePlugin({
                 },
                 {
                     match: /(case \i\.\i\.FAVORITES:return\(0,\i\.jsxs\)\("div",\{className:\i\.\i,children:\[)/,
-                    replace: "$1$self.renderGifTools(),"
+                    replace: '$1$self.renderPlus("gif"),$self.renderGifTools(this.props.favorites?.length??0),'
                 },
                 {
                     match: /componentWillUnmount\(\)\{(?=\i\.\i\(\),document\.removeEventListener\("keydown",this\.backToFrontPage\))/,
@@ -1221,10 +1221,10 @@ export default definePlugin({
         return tagEmpty(query);
     },
 
-    renderGifTools() {
+    renderGifTools(count: number) {
         return (
             <ErrorBoundary noop>
-                <GifTools />
+                <GifTools count={count} />
             </ErrorBoundary>
         );
     },

@@ -316,7 +316,7 @@ function NewTag() {
     );
 }
 
-export function GifTools() {
+export function GifTools({ count }: { count: number; }) {
     useTags();
     const tags = allTags();
     const names = tags.filter(tag => brush.includes(tag.id)).map(tag => tag.name);
@@ -326,7 +326,7 @@ export function GifTools() {
     return (
         <div className="vc-ei-giftools" data-vc-ei-editing={editing || undefined}>
             <div className="vc-ei-chips" role="group" aria-label={editing ? "Tags to apply, pick one or more" : "Filter favorites by tag"}>
-                {!editing && <button type="button" className="vc-ei-choice" aria-pressed={!filter} onClick={() => { filter = ""; refresh(); }}>All</button>}
+                {!editing && <button type="button" className="vc-ei-choice" aria-pressed={!filter} aria-label={`All, ${count} favorite GIFs`} onClick={() => { filter = ""; refresh(); }}>All<span className="vc-ei-count">{count}</span></button>}
                 {tags.map(tag => <TagChip key={tag.id} tag={tag} />)}
                 {editing && <NewTag />}
                 <button type="button" className="vc-ei-choice vc-ei-edit" aria-pressed={editing} onClick={toggleEditing}>{editing ? "Done" : "Edit"}</button>

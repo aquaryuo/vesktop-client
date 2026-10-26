@@ -1660,3 +1660,18 @@
     font-size: 12px;
     line-height: 1.45;
 }
+
+.vc-ei :has(> .vc-ei-giftools) > .vc-ei-plus {
+    order: 2;
+}
+
+.vc-ei :has(> .vc-ei-giftools) + .vc-ei-plus {
+    display: none;
+}
+
+.vc-ei-count {
+    margin-inline-start: 8px;
+    color: var(--q-t2);
+    font-variant-numeric: tabular-nums;
+    opacity: 0.8;
+}
