@@ -1671,7 +1671,6 @@
 
 .vc-ei-count {
     margin-inline-start: 8px;
-    color: var(--q-t2);
     font-variant-numeric: tabular-nums;
-    opacity: 0.8;
+    opacity: 0.7;
 }
