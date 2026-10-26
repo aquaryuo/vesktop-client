@@ -1562,3 +1562,94 @@
 .full-motion .vc-ei-tab.vc-ei-pin svg {
     transition: rotate 200ms var(--q-ease);
 }
+
+.vc-ei-saved-cell {
+    position: relative;
+    min-width: 0;
+}
+
+.vc-ei-saved-cell > .vc-ei-saved-item {
+    position: relative;
+    width: 100%;
+}
+
+.vc-ei-saved-item video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.vc-ei-saved-grid:has(.vc-ei-saved-gif) {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+}
+
+.vc-ei-saved-gif > .vc-ei-saved-item {
+    padding: 0;
+}
+
+.vc-ei-saved-gif > .vc-ei-saved-item :is(img, video) {
+    object-fit: cover;
+}
+
+.vc-ei-saved-remove {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid var(--q-line-strong);
+    background: color-mix(in srgb, var(--q-bg) 85%, transparent);
+    color: var(--q-text);
+    font: 600 13px/1 var(--q-display);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 140ms var(--q-ease), border-color 140ms var(--q-ease), color 140ms var(--q-ease);
+}
+
+.vc-ei-saved-cell:is(:hover, :focus-within) > .vc-ei-saved-remove {
+    opacity: 1;
+}
+
+.vc-ei-saved-remove:is(:hover, :focus-visible) {
+    border-color: #f04f6e;
+    color: #f04f6e;
+    outline: none;
+}
+
+.vc-ei-saved-cell[data-vc-ei-armed] > .vc-ei-saved-item::after {
+    content: "Click again to send";
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 6px;
+    background: color-mix(in srgb, var(--q-bg) 60%, transparent);
+    box-shadow: inset 0 0 0 2px var(--q-accent);
+    color: var(--q-text);
+    font: 600 10px/1.3 var(--q-display);
+    letter-spacing: 0.14em;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.vc-ei-strip .vc-ei-saved-cell {
+    flex: none;
+    width: 40px;
+}
+
+.vc-ei-strip .vc-ei-saved-cell.vc-ei-saved-sticker {
+    width: 56px;
+}
+
+.vc-ei-strip .vc-ei-saved-cell > .vc-ei-saved-item {
+    width: 100%;
+}
+
+.vc-ei-strip .vc-ei-saved-remove {
+    display: none;
+}

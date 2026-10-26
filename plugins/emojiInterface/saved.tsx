@@ -4,16 +4,19 @@ import { plugins } from "@api/PluginManager";
 import { insertTextIntoChatInputBox, sendMessage } from "@utils/discord";
 import { chooseFile } from "@utils/web";
 import { findByCodeLazy } from "@webpack";
-import { ChannelStore, Constants, ContextMenuApi, EmojiStore, ExpressionPickerStore, FluxDispatcher, GuildStore, IconUtils, Menu, Modal, openModal, PermissionsBits, PermissionStore, React, RestAPI, SelectedChannelStore, StickersStore, UploadHandler, UserStore, useEffect, useMemo, useState } from "@webpack/common";
+import { ChannelStore, Constants, ContextMenuApi, EmojiStore, ExpressionPickerStore, FluxDispatcher, GuildStore, IconUtils, Menu, Modal, openModal, PermissionsBits, PermissionStore, React, RestAPI, SelectedChannelStore, showToast, StickersStore, UploadHandler, UserStore, useEffect, useMemo, useState } from "@webpack/common";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
-import { settings } from ".";
+import { addGifFavorite, isGifFavorite, removeGifFavorite, settings } from ".";
 
 export type Kind = "emoji" | "sticker";
+export type ItemKind = Kind | "gif";
 
 export interface SavedItem {
     key: string;
-    kind: Kind;
+    kind: ItemKind;
+    link?: string;
+    mime?: string;
     name: string;
     id?: string;
     animated?: boolean;
@@ -38,6 +41,8 @@ const blobKey = (key: string) => `EmojiInterface_blob:${key}`;
 const LOTTIE = 3;
 const GIF = 4;
 const MAX_FILE = 2 * 1024 * 1024;
+const MAX_GIF_FILE = 10 * 1024 * 1024;
+const GIF_TYPES = /^(image\/(gif|webp|png|avif)|video\/(mp4|webm))$/;
 const EMOJI_NAME = /^\w{2,32}$/;
 const PLUS = "M12 5v14M5 12h14";
 const CLONER_ID = "emote-cloner";
@@ -100,12 +105,12 @@ function discordUrl(kind: Kind, id: string, animated: boolean | undefined, forma
     return `${window.GLOBAL_ENV.MEDIA_PROXY_ENDPOINT}/stickers/${id}.${format === GIF ? "gif" : "png"}?size=${size}`;
 }
 
-async function download(url: string) {
+async function download(url: string, media = false, max = MAX_FILE) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const blob = await res.blob();
-    if (!blob.type.startsWith("image/")) throw new Error("not an image");
-    if (blob.size > MAX_FILE) throw new Error("too big");
+    if (!blob.type.startsWith("image/") && !(media && blob.type.startsWith("video/"))) throw new Error("not an image");
+    if (blob.size > max) throw new Error("too big");
     return blob;
 }
 
@@ -118,7 +123,7 @@ function fromDiscord(kind: Kind, id: string, name: string, animated?: boolean, f
 }
 
 function fromItem(item: SavedItem): Source {
-    return { ...item, preview: "", blob: () => blobFor(item) };
+    return { ...item, kind: item.kind as Kind, preview: "", blob: () => blobFor(item) };
 }
 
 async function saveSource(source: Source) {
@@ -138,6 +143,33 @@ async function removeSaved(item: SavedItem) {
     urls.delete(item.key);
     url?.then(u => u && URL.revokeObjectURL(u));
     await commit(items.filter(i => i.key !== item.key));
+}
+
+async function saveGif({ link, file }: { link?: string; file?: File; }) {
+    await loadSaved();
+    if (link && items.some(item => item.kind === "gif" && item.link === link)) return "It's already in Downloads.";
+    const blob = file ?? await download(link!, true, MAX_GIF_FILE).catch(() => { throw new Error("Couldn't download it."); });
+    if (!GIF_TYPES.test(blob.type)) throw new Error("That isn't a GIF or a video.");
+    if (blob.size > MAX_GIF_FILE) throw new Error("That file is over 10 MB.");
+    const key = `gif:local:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    await DataStore.set(blobKey(key), blob);
+    await commit([...items, { key, kind: "gif", name: nameFrom(file?.name ?? link!) || "gif", link, mime: blob.type, added: Date.now() }]);
+    return "Saved to Downloads.";
+}
+
+export async function addGifLink(link: string) {
+    const [star, copy] = await Promise.allSettled([addGifFavorite(link), saveGif({ link })]);
+    const starred = star.status === "fulfilled" ? star.value : "Couldn't star it.";
+    const saved = copy.status === "fulfilled" ? copy.value : `No copy in Downloads: ${(copy.reason as Error)?.message ?? "the download failed."}`;
+    return `${starred} ${saved}`;
+}
+
+export async function addGifFile(file: File) {
+    try {
+        return `${await saveGif({ file })} Discord only stars GIFs that have a link, so send it and star the sent GIF.`;
+    } catch (e: any) {
+        return e?.message ?? "Couldn't save that file.";
+    }
 }
 
 function canUse(item: SavedItem, channel: any) {
@@ -168,7 +200,12 @@ function fileName(item: SavedItem, blob: Blob) {
 export async function sendSaved(item: SavedItem, how?: "file" | "link") {
     const channel = ChannelStore.getChannel(SelectedChannelStore.getChannelId());
     if (!channel) return;
-    if (!how && canUse(item, channel)) {
+    if (item.kind === "gif" && how !== "file" && item.link) {
+        sendMessage(channel.id, { content: item.link });
+    } else if (item.kind === "gif") {
+        const blob = await blobFor(item);
+        UploadHandler.promptToUpload([new File([blob], fileName(item, blob), { type: blob.type })], channel, 0);
+    } else if (!how && canUse(item, channel)) {
         if (item.kind === "emoji") insertTextIntoChatInputBox(`<${item.animated ? "a" : ""}:${item.name}:${item.id}> `);
         else sendMessage(channel.id, { content: "" }, true, { stickerIds: [item.id!] } as any);
     } else if ((how ?? settings.store.savedSend) === "link" && item.id) {
@@ -187,27 +224,57 @@ function SavedImage({ item }: { item: SavedItem; }) {
         urlFor(item.key).then(url => live && setSrc(url));
         return () => { live = false; };
     }, [item.key]);
-    return src ? <img src={src} alt="" loading="lazy" decoding="async" draggable={false} /> : <span className="vc-ei-saved-blank" />;
+    if (!src) return <span className="vc-ei-saved-blank" />;
+    if (item.mime?.startsWith("video/")) return <video src={src} muted loop playsInline preload="metadata" onMouseEnter={e => e.currentTarget.play().catch(() => { })} onMouseLeave={e => e.currentTarget.pause()} />;
+    return <img src={src} alt="" loading="lazy" decoding="async" draggable={false} />;
 }
 
 function openItemMenu(e: ReactMouseEvent, item: SavedItem) {
+    const gif = item.kind === "gif";
+    const starred = gif && !!item.link && isGifFavorite(item.link);
+    const entries = gif
+        ? [
+            <Menu.MenuItem key="file" id="vc-ei-send-file" label="Send as file" action={() => sendSaved(item, "file")} />,
+            <Menu.MenuItem key="link" id="vc-ei-send-link" label="Send link" disabled={!item.link} action={() => sendSaved(item, "link")} />,
+            <Menu.MenuItem key="star" id="vc-ei-star" label={starred ? "Remove from favorite GIFs" : "Add to favorite GIFs"} disabled={!item.link} action={() => {
+                const done = (text: string) => showToast({ text });
+                if (starred) removeGifFavorite(item.link!).then(() => done("Removed from favorite GIFs. It stays in Downloads."));
+                else addGifFavorite(item.link!).then(done);
+            }} />
+        ]
+        : [
+            <Menu.MenuItem key="file" id="vc-ei-send-file" label="Send as file" action={() => sendSaved(item, "file")} />,
+            <Menu.MenuItem key="link" id="vc-ei-send-link" label="Paste link" disabled={!item.id} action={() => sendSaved(item, "link")} />,
+            <Menu.MenuItem key="clone" id="vc-ei-clone" label="Clone to a server" action={() => openClone(fromItem(item))} />
+        ];
     ContextMenuApi.openContextMenu(e, () => (
         <Menu.Menu navId="vc-ei-saved" onClose={ContextMenuApi.closeContextMenu} aria-label={item.name}>
-            <Menu.MenuItem id="vc-ei-send-file" label="Send as file" action={() => sendSaved(item, "file")} />
-            <Menu.MenuItem id="vc-ei-send-link" label="Paste link" disabled={!item.id} action={() => sendSaved(item, "link")} />
-            <Menu.MenuItem id="vc-ei-clone" label="Clone to a server" action={() => openClone(fromItem(item))} />
-            <Menu.MenuItem id="vc-ei-remove" label="Remove from saved" color="danger" action={() => removeSaved(item)} />
+            {entries}
+            <Menu.MenuItem id="vc-ei-remove" label="Remove from Downloads" color="danger" action={() => removeSaved(item)} />
         </Menu.Menu>
     ));
 }
 
 function SavedGrid({ list }: { list: SavedItem[]; }) {
+    const [armed, setArmed] = useState("");
+    function pick(item: SavedItem) {
+        if (item.kind === "gif" && settings.store.gifGuard && armed !== item.key) {
+            setArmed(item.key);
+            setTimeout(() => setArmed(key => key === item.key ? "" : key), 4000);
+            return;
+        }
+        setArmed("");
+        sendSaved(item);
+    }
     return (
         <div className="vc-ei-saved-grid">
             {list.map(item => (
-                <button key={item.key} type="button" className={`vc-ei-saved-item vc-ei-saved-${item.kind}`} title={item.name} aria-label={item.name} onClick={() => sendSaved(item)} onContextMenu={e => openItemMenu(e, item)}>
-                    <SavedImage item={item} />
-                </button>
+                <div key={item.key} className={`vc-ei-saved-cell vc-ei-saved-${item.kind}`} data-vc-ei-armed={armed === item.key || undefined}>
+                    <button type="button" className="vc-ei-saved-item" title={item.name} aria-label={item.name} onClick={() => pick(item)} onContextMenu={e => openItemMenu(e, item)}>
+                        <SavedImage item={item} />
+                    </button>
+                    <button type="button" className="vc-ei-saved-remove" aria-label={`Remove ${item.name}`} title="Remove" onClick={() => removeSaved(item)}>×</button>
+                </div>
             ))}
         </div>
     );
@@ -217,17 +284,18 @@ export function SavedPanel() {
     const list = useSaved();
     const [query, setQuery] = useState("");
     const shown = query ? list.filter(item => item.name.toLowerCase().includes(query.toLowerCase())) : list;
-    const emojis = shown.filter(item => item.kind === "emoji"), stickers = shown.filter(item => item.kind === "sticker");
+    const emojis = shown.filter(item => item.kind === "emoji"), stickers = shown.filter(item => item.kind === "sticker"), gifs = shown.filter(item => item.kind === "gif");
     return (
         <div className="vc-ei-panel vc-ei-saved" id="vc-ei-saved-panel" role="tabpanel" aria-labelledby="vc-ei-saved-tab">
             <div className="vc-ei-saved-head">
-                <input className="vc-ei-input" type="search" placeholder="Search saved" aria-label="Search saved" value={query} onChange={e => setQuery(e.currentTarget.value)} />
-                <PlusButton kind="emoji" />
+                <input className="vc-ei-input" type="search" placeholder="Search downloads" aria-label="Search downloads" value={query} onChange={e => setQuery(e.currentTarget.value)} />
+                <PlusButton kind="all" />
             </div>
-            {!list.length && <p className="vc-ei-status">Nothing saved yet. Right-click an emoji or sticker and choose Save to my collection, or use the plus button.</p>}
+            {!list.length && <p className="vc-ei-status">Nothing here yet. Right-click an emoji or sticker and choose Save to Downloads, drop a GIF on the GIF tab, or use the plus button.</p>}
             {emojis.length > 0 && <section><h3 className="vc-ei-heading">Emojis</h3><SavedGrid list={emojis} /></section>}
             {stickers.length > 0 && <section><h3 className="vc-ei-heading">Stickers</h3><SavedGrid list={stickers} /></section>}
-            {list.length > 0 && !shown.length && <p className="vc-ei-status">No saved items match.</p>}
+            {gifs.length > 0 && <section><h3 className="vc-ei-heading">GIFs</h3><SavedGrid list={gifs} /></section>}
+            {list.length > 0 && !shown.length && <p className="vc-ei-status">Nothing in Downloads matches.</p>}
         </div>
     );
 }
@@ -238,7 +306,7 @@ export function SavedStrip({ kind }: { kind: Kind; }) {
     if (savedPlace === "tab" || !list.length) return null;
     return (
         <div className="vc-ei-strip">
-            <span className="vc-ei-heading">Saved</span>
+            <span className="vc-ei-heading">Downloads</span>
             <div className="vc-ei-strip-row" onWheel={e => { e.currentTarget.scrollLeft += e.deltaY; }}>
                 <SavedGrid list={list} />
             </div>
@@ -429,17 +497,68 @@ async function uploadFile(kind: Kind) {
     openClone({ kind, name: file.name.replace(/\.[^.]+$/, ""), animated: file.type === "image/gif", preview: "", blob: async () => file });
 }
 
-export function PlusButton({ kind, onUpload, uploadDisabled }: { kind: Kind; onUpload?(): void; uploadDisabled?: boolean; }) {
-    const label = kind === "emoji" ? "Add emoji" : "Add sticker";
+function GifLinkModal({ onClose }: { onClose(): void; }) {
+    const [link, setLink] = useState("");
+    const [status, setStatus] = useState("");
+    const [busy, setBusy] = useState(false);
+    async function add() {
+        setBusy(true);
+        setStatus("");
+        const text = await addGifLink(link.trim());
+        setBusy(false);
+        if (text.startsWith("Added")) {
+            showToast({ text });
+            onClose();
+        } else setStatus(text);
+    }
+    return (
+        <div className="vc-ei-modal">
+            <label className="vc-ei-label" htmlFor="vc-ei-gif-link">Direct link to a GIF, WebP, MP4 or WebM</label>
+            <input id="vc-ei-gif-link" className="vc-ei-input" type="url" placeholder="https://media.discordapp.net/attachments/..." value={link} onChange={e => setLink(e.currentTarget.value)} onKeyDown={e => { if (e.key === "Enter" && link.trim()) add(); }} />
+            <div className="vc-ei-actions">
+                <button type="button" className="vc-ei-button vc-ei-primary" disabled={busy || !link.trim()} onClick={add}>Add</button>
+                <button type="button" className="vc-ei-button" onClick={onClose}>Cancel</button>
+            </div>
+            {(busy || status) && <p className="vc-ei-status" role="status">{busy ? "Adding..." : status}</p>}
+        </div>
+    );
+}
+
+function openGifLink() {
+    openModal(props => (
+        <Modal {...props} size="sm" title="Add a GIF from a link">
+            <GifLinkModal onClose={props.onClose} />
+        </Modal>
+    ));
+}
+
+async function openGifFile() {
+    const file = await chooseFile("image/gif,image/webp,video/mp4,video/webm");
+    if (file) showToast({ text: await addGifFile(file) });
+}
+
+export function PlusButton({ kind, onUpload, uploadDisabled }: { kind: ItemKind | "all"; onUpload?(): void; uploadDisabled?: boolean; }) {
+    const label = kind === "emoji" ? "Add emoji" : kind === "sticker" ? "Add sticker" : kind === "gif" ? "Add GIF" : "Add to Downloads";
+    const gifItems = [
+        <Menu.MenuItem key="gif-file" id="vc-ei-gif-file" label="Add a GIF from a file" action={openGifFile} />,
+        <Menu.MenuItem key="gif-link" id="vc-ei-gif-link" label="Add a GIF from a link" action={openGifLink} />
+    ];
+    const entries = kind === "gif" ? gifItems : kind === "all"
+        ? [
+            <Menu.MenuItem key="file" id="vc-ei-save-file" label="Save an emoji or sticker from a file" action={() => openSave("emoji", "file")} />,
+            <Menu.MenuItem key="link" id="vc-ei-save-link" label="Save an emoji or sticker from a link" action={() => openSave("emoji", "link")} />,
+            ...gifItems
+        ]
+        : [
+            onUpload && <Menu.MenuItem key="upload" id="vc-ei-upload" label="Upload emoji" disabled={uploadDisabled} action={onUpload} />,
+            <Menu.MenuItem key="server" id="vc-ei-upload-server" label={`Upload a ${kind} file to a server`} action={() => uploadFile(kind)} />,
+            <Menu.MenuItem key="file" id="vc-ei-save-file" label={`Save ${kind === "emoji" ? "an emoji" : "a sticker"} from a file`} action={() => openSave(kind, "file")} />,
+            <Menu.MenuItem key="link" id="vc-ei-save-link" label={`Save ${kind === "emoji" ? "an emoji" : "a sticker"} from a link`} action={() => openSave(kind, "link")} />
+        ].filter(Boolean);
     return (
         <button type="button" className="vc-ei-plus" aria-label={label} title={label} onClick={e => ContextMenuApi.openContextMenu(e, () => (
             <Menu.Menu navId="vc-ei-add" onClose={ContextMenuApi.closeContextMenu} aria-label={label}>
-                {[
-                    onUpload && <Menu.MenuItem key="upload" id="vc-ei-upload" label="Upload emoji" disabled={uploadDisabled} action={onUpload} />,
-                    <Menu.MenuItem key="server" id="vc-ei-upload-server" label={`Upload a ${kind} file to a server`} action={() => uploadFile(kind)} />,
-                    <Menu.MenuItem key="file" id="vc-ei-save-file" label={`Save ${kind === "emoji" ? "an emoji" : "a sticker"} from a file`} action={() => openSave(kind, "file")} />,
-                    <Menu.MenuItem key="link" id="vc-ei-save-link" label={`Save ${kind === "emoji" ? "an emoji" : "a sticker"} from a link`} action={() => openSave(kind, "link")} />
-                ].filter(Boolean)}
+                {entries}
             </Menu.Menu>
         ))}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d={PLUS} /></svg>
@@ -450,7 +569,7 @@ export function PlusButton({ kind, onUpload, uploadDisabled }: { kind: Kind; onU
 function menuItems(source: Source) {
     const saved = !!source.id && isSaved(source.kind, source.id);
     return [
-        <Menu.MenuItem key="vc-ei-save" id="vc-ei-save" label={saved ? "Remove from saved" : "Save to my collection"} action={() => {
+        <Menu.MenuItem key="vc-ei-save" id="vc-ei-save" label={saved ? "Remove from Downloads" : "Save to Downloads"} action={() => {
             if (saved) {
                 const item = items.find(i => i.key === savedKey(source.kind, source.id!));
                 if (item) removeSaved(item);

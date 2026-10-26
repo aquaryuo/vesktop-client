@@ -8,7 +8,7 @@ import { EmojiStore, FluxDispatcher, React, showToast, UserSettingsActionCreator
 import type { ImgHTMLAttributes, MouseEvent as ReactMouseEvent, SyntheticEvent } from "react";
 
 import { allowGif, filterGifs, gifContent, gifFlags, GifTools, pickerGone, pickerMounted, stopGifs, tagEmpty, trackGif, untrackGif } from "./gifs";
-import { Kind, messageMenu, pickerMenu, PlusButton, restoreCloner, revokeUrls, saveDropped, SavedPanel, SavedStrip } from "./saved";
+import { addGifFile, addGifLink, ItemKind, Kind, messageMenu, pickerMenu, PlusButton, restoreCloner, revokeUrls, saveDropped, SavedPanel, SavedStrip } from "./saved";
 import managedStyle from "./styles.css?managed";
 
 const MIN_HEIGHT = 280;
@@ -21,8 +21,8 @@ const CATEGORY = "category:";
 const GAPS = [0, 2, 4, 6, 8, 12, 16];
 const SCROLL_SLACK = 2;
 const PIN = "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z";
-const BOOKMARK ="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z";
-const PLACES: ["tab" | "inline" | "both", string][] = [["tab", "Saved tab"], ["inline", "Inside tabs"], ["both", "Both"]];
+const DOWNLOAD = "M12 15V3M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5";
+const PLACES: ["tab" | "inline" | "both", string][] = [["tab", "Downloads tab"], ["inline", "Inside tabs"], ["both", "Both"]];
 const COG = "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0";
 const MAX_EMOJIS = 250;
 const MAX_GIF_BYTES = 762880;
@@ -92,12 +92,12 @@ export const settings = definePluginSettings({
     },
     savedPlace: {
         type: OptionType.SELECT,
-        description: "Where saved emojis and stickers show",
+        description: "Where downloaded emojis and stickers show",
         options: PLACES.map(([value, label]) => ({ label, value, default: value === "tab" }))
     },
     savedSend: {
         type: OptionType.SELECT,
-        description: "How to send a saved emoji or sticker the current account can't use",
+        description: "How to send a downloaded emoji or sticker the current account can't use",
         options: [
             { label: "Attach the saved file", value: "file", default: true },
             { label: "Paste its link", value: "link" }
@@ -304,7 +304,18 @@ function measure(src: string, video: boolean) {
     });
 }
 
-async function addGifFavorite(link: string) {
+export function isGifFavorite(link: string) {
+    return !!frecency().getCurrentValue()?.favoriteGifs?.gifs?.[link];
+}
+
+export async function removeGifFavorite(link: string) {
+    await frecency().updateAsync("favoriteGifs", (data: { gifs: Record<string, Gif>; }) => {
+        if (!data.gifs[link]) return false;
+        delete data.gifs[link];
+    }, 0);
+}
+
+export async function addGifFavorite(link: string) {
     let url: URL;
     try {
         url = new URL(link);
@@ -339,30 +350,36 @@ async function addGifFavorite(link: string) {
     return result;
 }
 
-type DropTarget = "emoji" | "sticker" | "gif";
+type DropTarget = "emoji" | "sticker" | "gif" | "downloads";
 
 const DROP_TEXT: Record<DropTarget, string> = {
     emoji: "Drop to save an emoji",
     sticker: "Drop to save a sticker",
-    gif: "Drop to add to favorite GIFs"
+    gif: "Drop to star it and keep a copy in Downloads",
+    downloads: "Drop to add to Downloads"
 };
 
 function dropTarget(drawer: HTMLElement): DropTarget {
-    if (panelView !== "saved") {
-        if (drawer.querySelector("#gif-picker-tab-panel")) return "gif";
-        if (drawer.querySelector("#sticker-picker-tab-panel")) return "sticker";
-    }
+    if (panelView === "saved") return "downloads";
+    if (drawer.querySelector("#gif-picker-tab-panel")) return "gif";
+    if (drawer.querySelector("#sticker-picker-tab-panel")) return "sticker";
     return "emoji";
 }
+
+const isGifLike = (file?: File, link?: string) => file
+    ? /^(image\/gif|video\/(mp4|webm))$/.test(file.type)
+    : !!link && /\.(gif|mp4|webm)(\?|$)/i.test(link);
 
 function handleDrop(target: DropTarget, transfer: DataTransfer) {
     const file = [...transfer.files].find(f => f.type.startsWith("image/") || f.type.startsWith("video/"));
     const link = (transfer.getData("text/uri-list") || transfer.getData("text/plain"))
         .split(/\r?\n/).map(line => line.trim()).find(line => /^https:\/\/\S+$/.test(line));
     const notify = (text: string) => text && showToast({ text });
+    if (target === "downloads") target = isGifLike(file, link) ? "gif" : "emoji";
     if (target === "gif") {
-        if (link) addGifFavorite(link).then(notify, () => notify("Couldn't add that GIF."));
-        else notify(file ? "Favorite GIFs need a link. Drop the GIF's link instead." : "Drop a GIF link.");
+        if (file) addGifFile(file).then(notify);
+        else if (link) addGifLink(link).then(notify);
+        else notify("Drop a GIF file or link.");
         return;
     }
     if (file || link) notify(saveDropped(target, file, link));
@@ -568,7 +585,7 @@ function PanelTabs() {
             <button type="button" className="vc-ei-tab vc-ei-pin" aria-label={pinLabel} title={pinLabel} aria-pressed={pinned} onClick={() => settings.store.pinned = !pinned}>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d={PIN} /></svg>
             </button>
-            {savedPlace !== "inline" && <PanelTab view="saved" id="vc-ei-saved-tab" label="Saved" panel="vc-ei-saved-panel" icon={BOOKMARK} />}
+            {savedPlace !== "inline" && <PanelTab view="saved" id="vc-ei-saved-tab" label="Downloads" panel="vc-ei-saved-panel" icon={DOWNLOAD} />}
             <PanelTab view="settings" id="vc-ei-tab" label="Picker settings" panel="vc-ei-panel" icon={COG} />
         </div>
     );
@@ -634,8 +651,8 @@ function Panel({ onReset }: { onReset(): void; }) {
             <Option label="Click GIFs twice to send" value={gifGuard} onChange={on => settings.store.gifGuard = on} />
             <Option label="Play emojis and stickers automatically" value={autoAnimate} onChange={on => settings.store.autoAnimate = on} />
             <Option label="Size stickers and emojis to the picker" value={scale} onChange={on => settings.store.scale = on} />
-            <Choices label="Saved items show in" value={savedPlace} options={PLACES} onChange={place => settings.store.savedPlace = place} />
-            <Choices label="Send saved items you can't use as" value={savedSend} options={[["file", "File"], ["link", "Link"]]} onChange={how => settings.store.savedSend = how} />
+            <Choices label="Downloaded emojis and stickers show in" value={savedPlace} options={PLACES} onChange={place => settings.store.savedPlace = place} />
+            <Choices label="Send downloads you can't use as" value={savedSend} options={[["file", "File"], ["link", "Link"]]} onChange={how => settings.store.savedSend = how} />
             <div className="vc-ei-option">
                 <span className="vc-ei-label">Picker size</span>
                 <button type="button" className="vc-ei-button" onClick={onReset}>Reset size</button>
@@ -924,6 +941,10 @@ export default definePlugin({
                     replace: "$1&&!$self.isStart($2)$3"
                 },
                 {
+                    match: /children:\[(\i),this\.renderHeaderContent\(\)\]/,
+                    replace: 'children:[$1,this.renderHeaderContent(),$self.renderPlus("gif")]'
+                },
+                {
                     match: /handleSelectGIF=\((\i),(\i)\)=>\{/,
                     replace: "$&if(!$self.allowGif($1,$2))return;"
                 },
@@ -1105,7 +1126,7 @@ export default definePlugin({
         );
     },
 
-    renderPlus(kind: Kind, onUpload?: () => void, uploadDisabled?: boolean) {
+    renderPlus(kind: ItemKind, onUpload?: () => void, uploadDisabled?: boolean) {
         return (
             <ErrorBoundary noop>
                 <PlusButton kind={kind} onUpload={onUpload} uploadDisabled={uploadDisabled} />
