@@ -137,7 +137,7 @@ function stickerURL({ id, format_type }: Message["stickerItems"][number]) {
     return `https:${window.GLOBAL_ENV.MEDIA_PROXY_ENDPOINT}/stickers/${id}.${format_type === 4 ? "gif" : "png"}?size=320`;
 }
 
-function imageURL({ proxy_url, width, height }: Message["attachments"][number]) {
+function imageURL({ proxy_url, width, height }: { proxy_url: string; width?: number; height?: number; }) {
     if (!width || !height) return proxy_url;
     const scale = Math.min(1, 1024 / Math.max(width, height));
     const url = new URL(proxy_url);
@@ -291,11 +291,23 @@ async function makeQuote(ref: string, channelId: string) {
         return;
     }
 
+    const spoilers = message.content.match(/\|\|[\s\S]*?\|\|/g) ?? [];
+    const bare = (link: string) => link.replace(/[?#].*$/, "");
+    const embeds = message.embeds.filter(e => (e.type === "image" || e.type === "gifv") && (e.image ?? e.thumbnail) && !spoilers.some(s => s.includes(bare(e.url))));
+    const links = new Set(embeds.map(e => bare(e.url)));
+    const onlyMedia = message.content.trim().split(/\s+/).every(word => links.has(bare(word)));
     const emojiRefs: { name: string; id: string; }[] = [];
-    const text = cleanText(message.content, emojiRefs);
+    const text = onlyMedia ? "" : cleanText(message.content, emojiRefs);
     const stickerItems = message.stickerItems.filter(s => s.format_type !== 3);
     const attachments = message.attachments.filter(a => a.content_type?.startsWith("image/") && !a.spoiler);
-    if (!text && !stickerItems.length && !attachments.length) {
+    const imageURLs = [
+        ...attachments.map(imageURL),
+        ...embeds.map(e => {
+            const media = (e.image ?? e.thumbnail)!;
+            return imageURL({ proxy_url: media.proxyURL ?? media.url, width: media.width, height: media.height });
+        })
+    ];
+    if (!text && !stickerItems.length && !imageURLs.length) {
         sendBotMessage(channelId, { author: helsea, content: "That message has nothing to quote." });
         return;
     }
@@ -310,7 +322,7 @@ async function makeQuote(ref: string, channelId: string) {
             loadBanners(author.id, guildId, !!message.webhookId),
             Promise.all(emojiRefs.map(async e => ({ name: e.name, image: await loadOptional(IconUtils.getEmojiURL({ id: e.id, animated: false, size: 256 })) }))),
             loadAll(stickerItems.map(stickerURL)),
-            loadAll(attachments.slice(0, 4).map(imageURL))
+            loadAll(imageURLs.slice(0, 4))
         ]);
         const id = generateId();
         quotes.set(id, {
