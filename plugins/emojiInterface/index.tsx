@@ -3,7 +3,7 @@ import ErrorBoundary from "@components/ErrorBoundary";
 import { classes } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { chooseFile, saveFile } from "@utils/web";
-import { EmojiStore, FluxDispatcher, UserSettingsActionCreators, UserStore, useLayoutEffect, useRef, useState } from "@webpack/common";
+import { EmojiStore, FluxDispatcher, React, UserSettingsActionCreators, UserStore, useEffect, useLayoutEffect, useRef, useState } from "@webpack/common";
 import type { ImgHTMLAttributes, MouseEvent as ReactMouseEvent, SyntheticEvent } from "react";
 
 import managedStyle from "./styles.css?managed";
@@ -12,6 +12,8 @@ const MIN_HEIGHT = 280;
 const BASE_WIDTH = 498;
 const MAX_ZOOM = 2;
 const COLUMNS = [0, 2, 3, 4, 5, 6, 7, 8];
+const CHECK_TIMEOUT = 15000;
+const CHECK_WORKERS = 6;
 const COG = "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0";
 const MAX_EMOJIS = 250;
 const MAX_GIF_BYTES = 762880;
@@ -87,7 +89,8 @@ function isHttps(value: unknown): value is string {
     }
 }
 
-function exportFavorites() {
+async function exportFavorites() {
+    await frecency().loadIfNecessary?.();
     const { favoriteEmojis, favoriteGifs } = frecency().getCurrentValue();
     const emojis: Emoji[] = (favoriteEmojis?.emojis ?? []).map((key: string) => {
         const emoji = EmojiStore.getCustomEmojiById(key);
@@ -115,7 +118,7 @@ function parseFavorites(text: string): Favorites {
         for (const [url, gif] of Object.entries<any>(raw.gifs)) {
             const size = (n: unknown) => Number.isInteger(n) && (n as number) > 0 && (n as number) < 100000;
             if (isHttps(url) && (gif?.format === 1 || gif?.format === 2) && isHttps(gif.src) && size(gif.width) && size(gif.height))
-                gifs[url] = { format: gif.format, src: gif.src, width: gif.width, height: gif.height, order: 0 };
+                gifs[url] = { format: gif.format, src: gif.src, width: gif.width, height: gif.height, order: Number.isInteger(gif.order) && gif.order >= 0 ? gif.order : 0 };
         }
 
     if (!emojis.length && !Object.keys(gifs).length) throw new Error("empty");
@@ -123,14 +126,14 @@ function parseFavorites(text: string): Favorites {
 }
 
 async function importEmojis(list: Emoji[]) {
-    const result = { added: 0, missing: 0, full: 0 };
+    const result = { added: 0, already: 0, missing: 0, full: 0 };
     if (!list.length) return result;
     await frecency().updateAsync("favoriteEmojis", (data: { emojis: string[]; }) => {
         const have = new Set(data.emojis);
         for (const { id, name } of list) {
             const key = id ?? name!;
-            if (have.has(key)) continue;
-            if (id && !EmojiStore.getCustomEmojiById(id)) result.missing++;
+            if (have.has(key)) result.already++;
+            else if (id && !EmojiStore.getCustomEmojiById(id)) result.missing++;
             else if (have.size >= MAX_EMOJIS) result.full++;
             else {
                 have.add(key);
@@ -144,13 +147,22 @@ async function importEmojis(list: Emoji[]) {
 }
 
 async function importGifs(list: Record<string, Gif>) {
-    const result = { added: 0, full: 0 };
+    const result = { added: 0, already: 0, full: 0 };
     if (!Object.keys(list).length) return result;
     const proto = protoField("favoriteGifs");
     if (!proto) throw new Error("no proto");
     await frecency().updateAsync("favoriteGifs", (data: { gifs: Record<string, Gif>; }) => {
         let order = Object.values(data.gifs).reduce((max, gif) => Math.max(max, gif.order), 0);
-        const fresh = Object.entries(list).filter(([url]) => !data.gifs[url]).map(([url, gif]) => [url, { ...gif, order: ++order }] as const);
+        const srcs = new Set(Object.values(data.gifs).map(gif => gif.src));
+        const fresh: [string, Gif][] = [];
+        for (const [url, gif] of Object.entries(list).sort(([, a], [, b]) => a.order - b.order)) {
+            if (data.gifs[url] || srcs.has(gif.src)) {
+                result.already++;
+                continue;
+            }
+            srcs.add(gif.src);
+            fresh.push([url, { ...gif, order: ++order }]);
+        }
         const fits = (n: number) => proto.toBinary({ ...data, gifs: { ...data.gifs, ...Object.fromEntries(fresh.slice(0, n)) } }).length <= MAX_GIF_BYTES;
         let low = 0, high = fresh.length;
         while (low < high) {
@@ -164,6 +176,53 @@ async function importGifs(list: Record<string, Gif>) {
         if (!low) return false;
     }, 0);
     return result;
+}
+
+function loads(gif: Gif) {
+    return new Promise<boolean | undefined>(resolve => {
+        const el = gif.format === 2 ? document.createElement("video") : new Image();
+        const timer = setTimeout(() => done(undefined), CHECK_TIMEOUT);
+        function done(ok: boolean | undefined) {
+            clearTimeout(timer);
+            el.onload = el.onerror = null;
+            el.removeAttribute("src");
+            if (el instanceof HTMLVideoElement) {
+                el.onloadedmetadata = null;
+                el.load();
+            }
+            resolve(ok);
+        }
+        el.onerror = () => done(false);
+        if (el instanceof HTMLVideoElement) {
+            el.preload = "metadata";
+            el.muted = true;
+            el.onloadedmetadata = () => done(true);
+        } else el.onload = () => done(true);
+        el.src = gif.src;
+    });
+}
+
+async function findBroken(onProgress: (done: number, total: number) => void) {
+    await frecency().loadIfNecessary?.();
+    const gifs = Object.entries<Gif>(frecency().getCurrentValue().favoriteGifs?.gifs ?? {});
+    const broken: string[] = [];
+    let next = 0, done = 0;
+    onProgress(0, gifs.length);
+    const worker = async () => {
+        while (next < gifs.length) {
+            const [url, gif] = gifs[next++];
+            if (await loads(gif) === false) broken.push(url);
+            onProgress(++done, gifs.length);
+        }
+    };
+    await Promise.all(Array.from({ length: CHECK_WORKERS }, worker));
+    return { broken, total: gifs.length };
+}
+
+async function removeGifs(urls: string[]) {
+    await frecency().updateAsync("favoriteGifs", (data: { gifs: Record<string, Gif>; }) => {
+        for (const url of urls) delete data.gifs[url];
+    }, 0);
 }
 
 async function importFavorites() {
@@ -181,22 +240,63 @@ async function importFavorites() {
     if (emojis.missing) lines.push(`${plural(emojis.missing, "emoji")} ${emojis.missing === 1 ? "is" : "are"} from servers this account isn't in, so Discord can't show ${emojis.missing === 1 ? "it" : "them"}.`);
     if (emojis.full) lines.push(`No room for ${plural(emojis.full, "emoji")}: favorites hold ${MAX_EMOJIS}.`);
     if (gifs.full) lines.push(`No room for ${plural(gifs.full, "GIF")}: Discord's favorites are full.`);
+    const already = emojis.already + gifs.already;
+    if (already) lines.push(`${plural(already, "favorite")} ${already === 1 ? "was" : "were"} already there.`);
     return lines.join(" ");
 }
 
 function Transfer() {
     const [status, setStatus] = useState("");
+    const [broken, setBroken] = useState<string[]>([]);
+    const [checking, setChecking] = useState(false);
+
+    async function check() {
+        setBroken([]);
+        if (!navigator.onLine) return setStatus("You're offline, so the GIFs can't be checked.");
+        setChecking(true);
+        try {
+            const result = await findBroken((done, total) => setStatus(`Checking ${done} of ${plural(total, "GIF")}.`));
+            if (!result.total) setStatus("You have no favorite GIFs.");
+            else if (!result.broken.length) setStatus("All your favorite GIFs load.");
+            else if (result.broken.length === result.total && result.total >= 3) setStatus("None of your GIFs loaded. Check your connection and try again.");
+            else {
+                setBroken(result.broken);
+                setStatus(`${result.broken.length} of ${plural(result.total, "GIF")} didn't load.`);
+            }
+        } catch {
+            setStatus("Couldn't check the GIFs. Try again.");
+        } finally {
+            setChecking(false);
+        }
+    }
+
+    function remove() {
+        const count = broken.length;
+        setBroken([]);
+        removeGifs(broken).then(
+            () => setStatus(`Removed ${plural(count, "GIF")} that didn't load.`),
+            () => setStatus("Couldn't remove them. Try again.")
+        );
+    }
+
     return (
         <div className="vc-ei-transfer">
             <div className="vc-ei-transfer-text">
                 <strong>Favorites</strong>
-                <span>Move favorite emojis and GIFs between accounts with a file.</span>
+                <span>Move favorite emojis and GIFs between accounts with a file, or check for GIFs that no longer load.</span>
             </div>
             <div className="vc-ei-actions">
-                <button type="button" className="vc-ei-button" onClick={() => setStatus(exportFavorites())}>Export</button>
+                <button type="button" className="vc-ei-button" onClick={() => exportFavorites().then(setStatus, () => setStatus("Couldn't export the favorites. Try again."))}>Export</button>
                 <button type="button" className="vc-ei-button vc-ei-primary" onClick={() => importFavorites().then(setStatus, () => setStatus("Couldn't save the favorites. Try again."))}>Import</button>
+                <button type="button" className="vc-ei-button" disabled={checking} onClick={check}>Check GIFs</button>
             </div>
             {status && <p className="vc-ei-status" role="status">{status}</p>}
+            {broken.length > 0 && (
+                <div className="vc-ei-actions vc-ei-confirm">
+                    <button type="button" className="vc-ei-button vc-ei-primary" onClick={remove}>Remove {broken.length}</button>
+                    <button type="button" className="vc-ei-button" onClick={() => { setBroken([]); setStatus("Kept all your GIFs."); }}>Keep</button>
+                </div>
+            )}
         </div>
     );
 }
@@ -244,10 +344,36 @@ function Option({ label, value, onChange }: { label: string; value: boolean; onC
     );
 }
 
+let panelOpen = false;
+const panelListeners = new Set<() => void>();
+
+function setPanel(open: boolean) {
+    if (panelOpen === open) return;
+    panelOpen = open;
+    panelListeners.forEach(listener => listener());
+    nudge();
+}
+
+function subscribePanel(listener: () => void) {
+    panelListeners.add(listener);
+    return () => { panelListeners.delete(listener); };
+}
+
+const usePanel = () => React.useSyncExternalStore(subscribePanel, () => panelOpen);
+
+function SettingsTab() {
+    const open = usePanel();
+    return (
+        <button type="button" role="tab" id="vc-ei-tab" className="vc-ei-tab" aria-label="Picker settings" aria-selected={open} aria-controls="vc-ei-panel" onClick={() => setPanel(!open)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d={COG} /></svg>
+        </button>
+    );
+}
+
 function Panel({ onReset }: { onReset(): void; }) {
     const { columns, hoverPlay, scale } = settings.use(["columns", "hoverPlay", "scale"]);
     return (
-        <div className="vc-ei-panel" id="vc-ei-panel" role="group" aria-label="Picker settings">
+        <div className="vc-ei-panel" id="vc-ei-panel" role="tabpanel" aria-labelledby="vc-ei-tab">
             <div className="vc-ei-option">
                 <span className="vc-ei-label">GIFs per row</span>
                 <div className="vc-ei-choices" role="group" aria-label="GIFs per row">
@@ -269,9 +395,23 @@ function Panel({ onReset }: { onReset(): void; }) {
 
 function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; side: string; }) {
     const ref = useRef<HTMLDivElement>(null);
-    const [open, setOpen] = useState(false);
+    const open = usePanel();
     const { scale } = settings.use(["scale"]);
     const section = () => ref.current?.closest("section");
+
+    useEffect(() => {
+        const drawer = ref.current?.parentElement;
+        if (!drawer) return;
+        const close = (e: MouseEvent) => {
+            const tab = (e.target as Element).closest?.('[role="tab"]');
+            if (tab && tab.id !== "vc-ei-tab") setPanel(false);
+        };
+        drawer.addEventListener("click", close);
+        return () => {
+            drawer.removeEventListener("click", close);
+            setPanel(false);
+        };
+    }, []);
 
     useLayoutEffect(() => {
         const el = section();
@@ -286,11 +426,6 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
         observer.observe(drawer);
         return () => observer.disconnect();
     }, [scale]);
-
-    function toggle() {
-        setOpen(!open);
-        nudge();
-    }
 
     function drag(e: ReactMouseEvent) {
         const el = section();
@@ -324,9 +459,6 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
         <>
             <div ref={ref} className="vc-ei-edge" onMouseDown={e => { e.stopPropagation(); drag(e); }} onDoubleClick={resetHeight} />
             <div className={`vc-ei-corner vc-ei-corner-${side}`} style={{ [side]: -4 }} onMouseDown={e => { drag(e); onWidthDown(e); }} />
-            <button type="button" className="vc-ei-cog" aria-label="Picker settings" aria-expanded={open} aria-controls="vc-ei-panel" onClick={toggle}>
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d={COG} /></svg>
-            </button>
             {open && <Panel onReset={resetSize} />}
         </>
     );
@@ -388,6 +520,10 @@ export default definePlugin({
                 {
                     match: /emojiSize:null!=(\i)&&\1<(\i)\?/,
                     replace: "emojiSize:$self.settings.store.scale||null!=$1&&$1<$2?"
+                },
+                {
+                    match: /role:"tablist",.{0,80}?children:\[\i,\i,\i,/,
+                    replace: "$&$self.renderTab(),"
                 }
             ]
         },
@@ -446,6 +582,14 @@ export default definePlugin({
         return (
             <ErrorBoundary noop>
                 <Frame onWidthDown={onWidthDown} side={side} />
+            </ErrorBoundary>
+        );
+    },
+
+    renderTab() {
+        return (
+            <ErrorBoundary noop>
+                <SettingsTab />
             </ErrorBoundary>
         );
     },

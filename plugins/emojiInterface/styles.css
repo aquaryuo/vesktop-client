@@ -78,7 +78,7 @@
 
 .vc-ei [class*="navButton_"],
 .vc-ei [class*="navButtonActive_"],
-.vc-ei-cog,
+.vc-ei-tab,
 .vc-ei-choice {
     position: relative;
     isolation: isolate;
@@ -96,7 +96,7 @@
 
 .vc-ei [class*="navButton_"]::before,
 .vc-ei [class*="navButtonActive_"]::before,
-.vc-ei-cog::before,
+.vc-ei-tab::before,
 .vc-ei-choice::before {
     content: "";
     position: absolute;
@@ -108,60 +108,64 @@
 }
 
 .vc-ei [class*="navButton_"]:hover,
-.vc-ei-cog:hover,
+.vc-ei-tab:hover,
 .vc-ei-choice:hover {
     color: var(--q-text);
 }
 
 .vc-ei [class*="navButton_"]:hover::before,
-.vc-ei-cog:hover::before,
+.vc-ei-tab:hover::before,
 .vc-ei-choice:hover::before {
     border-color: var(--q-line-strong);
 }
 
 .vc-ei [class*="navButton_"][class*="navButtonActive_"],
-.vc-ei-cog[aria-expanded="true"],
+.vc-ei-tab[aria-selected="true"],
 .vc-ei-choice[aria-pressed="true"] {
     color: var(--q-bg);
 }
 
 .vc-ei [class*="navButton_"][class*="navButtonActive_"]::before,
-.vc-ei-cog[aria-expanded="true"]::before,
+.vc-ei-tab[aria-selected="true"]::before,
 .vc-ei-choice[aria-pressed="true"]::before {
     border-color: transparent;
     background: var(--q-solid);
 }
 
 .vc-ei [class*="navButton_"]:focus-visible,
-.vc-ei-cog:focus-visible,
+.vc-ei-tab:focus-visible,
 .vc-ei-choice:focus-visible {
     outline: none;
 }
 
 .vc-ei [class*="navButton_"]:focus-visible::before,
-.vc-ei-cog:focus-visible::before,
+.vc-ei-tab:focus-visible::before,
 .vc-ei-choice:focus-visible::before {
     outline: 1px solid var(--q-accent);
     outline-offset: 3px;
 }
 
-.vc-ei-cog {
-    position: absolute;
-    top: 17px;
-    right: 18px;
-    z-index: 3;
+.vc-ei-tab {
+    order: 1;
     display: grid;
+    flex: none;
     place-items: center;
     width: 44px;
     height: 29px;
+    margin-inline: auto 2px;
     padding: 0;
 }
 
-.vc-ei:not(:has(nav)) > .vc-ei-cog {
-    display: none;
+.vc-ei:has(> .vc-ei-panel) [class*="navButton_"][class*="navButtonActive_"] {
+    color: var(--q-sub);
 }
 
-.vc-ei-cog svg {
+.vc-ei:has(> .vc-ei-panel) [class*="navButton_"][class*="navButtonActive_"]::before {
+    border-color: var(--q-line);
+    background: none;
+}
+
+.vc-ei-tab svg {
     width: 16px;
     height: 16px;
     fill: none;
@@ -172,11 +176,11 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-    .vc-ei-cog svg {
+    .vc-ei-tab svg {
         transition: rotate 240ms var(--q-ease);
     }
 
-    .vc-ei-cog[aria-expanded="true"] svg {
+    .vc-ei-tab[aria-selected="true"] svg {
         rotate: 90deg;
     }
 }
@@ -500,13 +504,13 @@
 
 @media (forced-colors: active) {
     .vc-ei [class*="navButton_"][class*="navButtonActive_"],
-    .vc-ei-cog[aria-expanded="true"],
+    .vc-ei-tab[aria-selected="true"],
     .vc-ei-choice[aria-pressed="true"] {
         color: HighlightText;
     }
 
     .vc-ei [class*="navButton_"][class*="navButtonActive_"]::before,
-    .vc-ei-cog[aria-expanded="true"]::before,
+    .vc-ei-tab[aria-selected="true"]::before,
     .vc-ei-choice[aria-pressed="true"]::before {
         background: Highlight;
     }
@@ -516,4 +520,15 @@
 .vc-ei [data-focused]:is(:hover, [data-focused="true"]) .vc-ei-still,
 .vc-ei [data-focused]:not(:hover, [data-focused="true"]) .vc-ei-gif {
     display: none;
+}
+
+.vc-ei-button:disabled {
+    border-color: var(--q-line);
+    color: var(--q-sub);
+    box-shadow: none;
+    cursor: progress;
+}
+
+.vc-ei-confirm {
+    flex: 1 1 100%;
 }
