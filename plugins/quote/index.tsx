@@ -4,8 +4,10 @@ import ErrorBoundary from "@components/ErrorBoundary";
 import { fetchUserProfile } from "@utils/discord";
 import { classes } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
+import { saveFile } from "@utils/web";
 import type { Message } from "@vencord/discord-types";
 import { findByCodeLazy } from "@webpack";
+import { applyPalette, GIFEncoder, quantize } from "gifenc";
 import { ChannelStore, Constants, FluxDispatcher, GuildMemberStore, IconUtils, MessageStore, PendingReplyStore, React, RestAPI, showToast, UploadHandler, UserProfileStore, UserStore, UserUtils, useEffect, useRef, useState } from "@webpack/common";
 
 import { EFFECTS, EMOJI_BASE, FONTS, loadFonts, PLACES, QuoteContent, QuoteStyle, renderQuote, unloadFonts } from "./draw";
@@ -60,6 +62,14 @@ const settings = definePluginSettings({
         type: OptionType.SELECT,
         description: "Default name position",
         options: PLACES.map(p => ({ label: p.name, value: p.alias, default: p === PLACES[0] }))
+    },
+    format: {
+        type: OptionType.SELECT,
+        description: "File type for Send and Save. A GIF can be added to favorite GIFs",
+        options: [
+            { label: "GIF", value: "gif", default: true },
+            { label: "PNG", value: "png" }
+        ]
     },
     ...Object.fromEntries(TOGGLES.map(([key, title]) => [key, {
         type: OptionType.SELECT,
@@ -136,6 +146,20 @@ function imageURL({ proxy_url, width, height }: Message["attachments"][number]) 
     return url.href;
 }
 
+async function toGif(png: Blob) {
+    const bitmap = await createImageBitmap(png);
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const palette = quantize(data, 256);
+    const gif = GIFEncoder();
+    gif.writeFrame(applyPalette(data, palette), width, height, { palette });
+    gif.finish();
+    return new Blob([gif.bytesView() as Uint8Array<ArrayBuffer>], { type: "image/gif" });
+}
+
 const FONT_ITEMS = FONTS.map(f => ({ alias: f.alias, name: `${f.family} (${f.alias})` }));
 
 function Icon({ d }: { d: string; }) {
@@ -159,6 +183,7 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
     const [style, setStyle] = useState(quote.style);
     const [url, setUrl] = useState<string>();
     const blob = useRef<Blob | undefined>(undefined);
+    const gif = useRef<Promise<Blob> | undefined>(undefined);
 
     useEffect(() => {
         quote.style = style;
@@ -167,6 +192,7 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
         renderQuote(quote.content, style).then(b => {
             if (!alive) return;
             blob.current = b;
+            gif.current = undefined;
             made = URL.createObjectURL(b);
             setUrl(made);
         }).catch(() => showToast({ text: "Couldn't draw the quote", variant: "critical" }));
@@ -176,9 +202,21 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
         };
     }, [style]);
 
+    const file = async () => {
+        if (!blob.current) return;
+        if (settings.store.format !== "gif") return new File([blob.current], "quote.png", { type: "image/png" });
+        return new File([await (gif.current ??= toGif(blob.current))], "quote.gif", { type: "image/gif" });
+    };
+
     const send = () => {
         const channel = ChannelStore.getChannel(channelId);
-        if (blob.current && channel) UploadHandler.promptToUpload([new File([blob.current], "quote.png", { type: "image/png" })], channel, 0);
+        file().then(f => { if (f && channel) UploadHandler.promptToUpload([f], channel, 0); })
+            .catch(() => showToast({ text: "Couldn't prepare the quote", variant: "critical" }));
+    };
+
+    const save = () => {
+        file().then(f => { if (f) saveFile(f); })
+            .catch(() => showToast({ text: "Couldn't save the quote", variant: "critical" }));
     };
 
     const { serverAvatar, banner, serverBanner, emojis, stickers, images } = quote.content;
@@ -193,7 +231,7 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
     const copy = () => {
         if (!blob.current) return;
         navigator.clipboard.write([new ClipboardItem({ "image/png": blob.current })])
-            .then(() => showToast({ text: "Quote copied", variant: "success" }))
+            .then(() => showToast({ text: settings.store.format === "gif" ? "Quote copied as PNG. The clipboard can't hold a GIF, so use Send or Save for one" : "Quote copied", variant: "success" }))
             .catch(() => showToast({ text: "Couldn't copy the quote", variant: "critical" }));
     };
 
@@ -223,6 +261,7 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
                 )}
                 <Picker label="Name position" value={style.place} items={PLACES} onChange={place => setStyle({ ...style, place })} />
                 <button type="button" className="vc-quote-button vc-quote-primary" onClick={send}>Send</button>
+                <button type="button" className="vc-quote-button" onClick={save}>Save</button>
                 <button type="button" className="vc-quote-button" onClick={copy}>Copy</button>
             </div>
         </div>
