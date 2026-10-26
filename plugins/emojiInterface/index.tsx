@@ -26,6 +26,8 @@ const PLACES: ["tab" | "inline" | "both", string][] = [["tab", "Downloads tab"],
 const COG = "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0";
 const MAX_EMOJIS = 250;
 const MAX_GIF_BYTES = 762880;
+const DISCORD_CDN = /^(cdn\.discordapp\.com|media\.discordapp\.net)$/;
+const SIGNED_PARAMS = ["ex", "is", "hm"];
 const FONT_URL = "https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600&display=swap";
 const ID = /^\d{17,20}$/;
 const NAME = /^[\w+-]{1,64}$/;
@@ -212,12 +214,13 @@ async function importGifs(list: Record<string, Gif>) {
         const srcs = new Set(Object.values(data.gifs).map(gif => gif.src));
         const fresh: [string, Gif][] = [];
         for (const [url, gif] of Object.entries(list).sort(([, a], [, b]) => a.order - b.order)) {
-            if (data.gifs[url] || srcs.has(gif.src)) {
+            const key = gifKey(url);
+            if (data.gifs[key] || srcs.has(gif.src)) {
                 result.already++;
                 continue;
             }
             srcs.add(gif.src);
-            fresh.push([url, { ...gif, order: ++order }]);
+            fresh.push([key, { ...gif, order: ++order }]);
         }
         const fits = (n: number) => proto.toBinary({ ...data, gifs: { ...data.gifs, ...Object.fromEntries(fresh.slice(0, n)) } }).length <= MAX_GIF_BYTES;
         let low = 0, high = fresh.length;
@@ -304,14 +307,42 @@ function measure(src: string, video: boolean) {
     });
 }
 
+function gifKey(link: string) {
+    try {
+        const url = new URL(link);
+        if (!DISCORD_CDN.test(url.hostname)) return link;
+        for (const param of SIGNED_PARAMS) url.searchParams.delete(param);
+        return url.href;
+    } catch {
+        return link;
+    }
+}
+
+let keysFixed = false;
+function fixGifKeys() {
+    if (keysFixed) return;
+    keysFixed = true;
+    const gifs: Record<string, Gif> = frecency().getCurrentValue()?.favoriteGifs?.gifs ?? {};
+    if (Object.keys(gifs).every(key => gifKey(key) === key)) return;
+    frecency().updateAsync("favoriteGifs", (data: { gifs: Record<string, Gif>; }) => {
+        for (const [key, gif] of Object.entries(data.gifs)) {
+            const fixed = gifKey(key);
+            if (fixed === key) continue;
+            delete data.gifs[key];
+            data.gifs[fixed] ??= gif;
+        }
+    }, 0);
+}
+
 export function isGifFavorite(link: string) {
-    return !!frecency().getCurrentValue()?.favoriteGifs?.gifs?.[link];
+    return !!frecency().getCurrentValue()?.favoriteGifs?.gifs?.[gifKey(link)];
 }
 
 export async function removeGifFavorite(link: string) {
     await frecency().updateAsync("favoriteGifs", (data: { gifs: Record<string, Gif>; }) => {
-        if (!data.gifs[link]) return false;
-        delete data.gifs[link];
+        const keys = [link, gifKey(link)].filter(key => data.gifs[key]);
+        if (!keys.length) return false;
+        for (const key of keys) delete data.gifs[key];
     }, 0);
 }
 
@@ -334,13 +365,14 @@ export async function addGifFavorite(link: string) {
         return "Couldn't load that GIF.";
     }
     let result = "Added to favorite GIFs.";
+    const key = gifKey(url.href);
     await frecency().updateAsync("favoriteGifs", (data: { gifs: Record<string, Gif>; }) => {
-        if (data.gifs[url.href]) {
+        if (data.gifs[key]) {
             result = "That GIF is already a favorite.";
             return false;
         }
         const order = Object.values(data.gifs).reduce((max, gif) => Math.max(max, gif.order), 0) + 1;
-        const gifs = { ...data.gifs, [url.href]: { format: video ? 2 : 1, src: url.href, width: size.width, height: size.height, order } };
+        const gifs = { ...data.gifs, [key]: { format: video ? 2 : 1, src: url.href, width: size.width, height: size.height, order } };
         if (proto.toBinary({ ...data, gifs }).length > MAX_GIF_BYTES) {
             result = "Discord's favorite GIFs are full.";
             return false;
@@ -1144,6 +1176,7 @@ export default definePlugin({
 
     startView(picker: { props: { query?: string; hideFavorites?: boolean; }; handleSelectItem(type: string, name?: string): void; forceUpdate(): void; }, types: Record<string, string>) {
         pickerMounted(picker);
+        fixGifKeys();
         const view = settings.store.gifStart;
         if (!view || picker.props.query) return;
         if (view === "favorites") {
