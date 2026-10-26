@@ -1545,3 +1545,20 @@
         corner-shape: bevel;
     }
 }
+
+.vc-ei-tab.vc-ei-pin[aria-pressed="true"] {
+    color: var(--q-bg);
+}
+
+.vc-ei-tab.vc-ei-pin[aria-pressed="true"]::before {
+    border-color: transparent;
+    background: var(--q-solid);
+}
+
+.vc-ei-tab.vc-ei-pin[aria-pressed="true"] svg {
+    rotate: 45deg;
+}
+
+.full-motion .vc-ei-tab.vc-ei-pin svg {
+    transition: rotate 200ms var(--q-ease);
+}
