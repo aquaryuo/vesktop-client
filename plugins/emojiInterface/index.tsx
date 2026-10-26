@@ -16,6 +16,7 @@ const COLUMNS = [0, 2, 3, 4, 5, 6, 7, 8];
 const CHECK_TIMEOUT = 15000;
 const CHECK_WORKERS = 6;
 const CATEGORY = "category:";
+const GIF_GAP = 4;
 const COG = "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0";
 const MAX_EMOJIS = 250;
 const MAX_GIF_BYTES = 762880;
@@ -47,14 +48,20 @@ const settings = definePluginSettings({
         type: OptionType.SELECT,
         description: "GIFs per row",
         options: [
-            { label: "Fit to width", value: 0, default: true },
-            ...[2, 3, 4, 5, 6, 7, 8].map(n => ({ label: String(n), value: n }))
+            { label: "Fit to width", value: 0 },
+            ...[2, 3, 4, 5, 6, 7, 8].map(n => ({ label: String(n), value: n, default: n === 3 }))
         ]
     },
     hoverPlay: {
         type: OptionType.BOOLEAN,
         description: "Play GIFs in the picker only while you hover them",
-        default: true
+        default: false
+    },
+    defaultsVersion: {
+        type: OptionType.NUMBER,
+        description: "Last applied defaults",
+        default: 0,
+        hidden: true
     },
     autoAnimate: {
         type: OptionType.BOOLEAN,
@@ -319,19 +326,31 @@ function fit(section: HTMLElement, height: number, bottom = section.getBoundingC
     return Math.round(Math.max(MIN_HEIGHT, Math.min(height, bottom - 8, innerHeight - 16)));
 }
 
+const zoomFor = (width: number) => Math.min(MAX_ZOOM, Math.max(1, width / BASE_WIDTH));
+const FROZEN = ["--vc-ei-frozen-w", "--vc-ei-frozen-h", "--vc-ei-start-w", "--vc-ei-preview"];
+
+function preview(drawer: HTMLElement, width: number, height: number) {
+    const start = parseFloat(drawer.style.getPropertyValue("--vc-ei-start-w")) || width;
+    if (settings.store.scale) drawer.style.setProperty("--vc-ei-preview", String(zoomFor(width) / zoomFor(start)));
+    const label = drawer.querySelector(".vc-ei-preview span");
+    if (label) label.textContent = `${Math.round(width)} × ${Math.round(height)}`;
+}
+
 function freeze(drawer: HTMLElement) {
     if (drawer.classList.contains("vc-ei-resizing")) return;
     const content = [...drawer.querySelector(':scope > [class*="contentWrapper_"]')?.children ?? []].find(el => el.tagName !== "NAV");
     if (!content) return;
     const { width, height } = content.getBoundingClientRect();
+    const { offsetWidth, offsetHeight } = drawer;
     drawer.style.setProperty("--vc-ei-frozen-w", `${width}px`);
     drawer.style.setProperty("--vc-ei-frozen-h", `${height}px`);
+    drawer.style.setProperty("--vc-ei-start-w", String(offsetWidth));
     drawer.classList.add("vc-ei-resizing");
+    preview(drawer, offsetWidth, offsetHeight);
     const done = () => {
         document.removeEventListener("mouseup", done, true);
         drawer.classList.remove("vc-ei-resizing");
-        drawer.style.removeProperty("--vc-ei-frozen-w");
-        drawer.style.removeProperty("--vc-ei-frozen-h");
+        FROZEN.forEach(name => drawer.style.removeProperty(name));
         zoom(drawer);
         nudge();
     };
@@ -348,7 +367,7 @@ function nudge() {
 
 function zoom(drawer: HTMLElement) {
     if (drawer.classList.contains("vc-ei-resizing")) return;
-    const value = settings.store.scale ? String(Math.min(MAX_ZOOM, Math.max(1, drawer.offsetWidth / BASE_WIDTH))) : "";
+    const value = settings.store.scale ? String(zoomFor(drawer.offsetWidth)) : "";
     if (drawer.style.getPropertyValue("--vc-ei-zoom") === value) return;
     if (value) drawer.style.setProperty("--vc-ei-zoom", value);
     else drawer.style.removeProperty("--vc-ei-zoom");
@@ -488,7 +507,10 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
         const drawer = ref.current?.parentElement;
         if (!drawer) return;
         zoom(drawer);
-        const observer = new ResizeObserver(() => zoom(drawer));
+        const observer = new ResizeObserver(([entry]) => {
+            if (drawer.classList.contains("vc-ei-resizing")) preview(drawer, entry.contentRect.width, entry.contentRect.height);
+            else zoom(drawer);
+        });
         observer.observe(drawer);
         return () => observer.disconnect();
     }, [scale]);
@@ -537,6 +559,7 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
             <div ref={ref} className="vc-ei-edge" onMouseDown={e => { e.stopPropagation(); drag(e); }} onDoubleClick={resetHeight} />
             <div className={`vc-ei-corner vc-ei-corner-${side}`} style={{ [side]: -4 }} onMouseDown={e => { drag(e); onWidthDown(e); }} />
             {open && <Panel onReset={resetSize} />}
+            <div className="vc-ei-preview" aria-hidden="true"><span /></div>
         </>
     );
 }
@@ -636,6 +659,10 @@ export default definePlugin({
                 {
                     match: /(null!=(\i))(&&\(\i=\(0,\i\.jsx\)\(\i\.\i,\{onClick:this\.handleClearQuery)/,
                     replace: "$1&&!$self.isStart($2)$3"
+                },
+                {
+                    match: /itemGutter:12/g,
+                    replace: `itemGutter:${GIF_GAP}`
                 }
             ]
         },
@@ -649,6 +676,10 @@ export default definePlugin({
                 {
                     match: /"img",(?=\{src:\i\(\i\),width:)/,
                     replace: "$self.GifImage,"
+                },
+                {
+                    match: /itemGutter:12/g,
+                    replace: `itemGutter:${GIF_GAP}`
                 }
             ]
         },
@@ -673,6 +704,11 @@ export default definePlugin({
         link.rel = "stylesheet";
         link.href = FONT_URL;
         document.head.append(link);
+        if (settings.store.defaultsVersion < 1) {
+            settings.store.columns = 3;
+            settings.store.hoverPlay = false;
+            settings.store.defaultsVersion = 1;
+        }
     },
 
     stop() {

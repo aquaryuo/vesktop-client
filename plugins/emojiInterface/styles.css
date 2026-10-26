@@ -840,3 +840,46 @@
 .vc-ei [class*="result_"][class*="result_"] {
     content-visibility: auto;
 }
+
+.vc-ei-preview {
+    display: none;
+}
+
+.vc-ei.vc-ei-resizing > .vc-ei-preview {
+    position: absolute;
+    inset: 59px 1px 1px;
+    z-index: 3;
+    display: grid;
+    place-items: end center;
+    padding-bottom: 16px;
+    background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--q-accent) 10%, transparent) 0 1px, transparent 1px 12px);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--q-accent) 45%, transparent);
+    pointer-events: none;
+}
+
+.vc-ei-preview span {
+    padding: 8px 12px;
+    background: var(--q-solid);
+    color: var(--q-bg);
+    font: 600 11px/1 var(--q-display);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.14em;
+    box-shadow: var(--q-glow);
+}
+
+.vc-ei.vc-ei-resizing .vc-ei-emojis [class*="bodyWrapper_"],
+.vc-ei.vc-ei-resizing #sticker-picker-grid {
+    scale: var(--vc-ei-preview, 1);
+    transform-origin: 0 0;
+}
+
+.full-motion .vc-ei.vc-ei-resizing > .vc-ei-preview {
+    animation: vc-ei-fade 120ms var(--q-ease) both;
+}
+
+@supports (corner-shape: bevel) {
+    .vc-ei-preview span {
+        border-radius: 6px 0 6px 0;
+        corner-shape: bevel;
+    }
+}
