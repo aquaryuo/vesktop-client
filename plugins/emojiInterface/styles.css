@@ -1461,3 +1461,87 @@
     --custom-emoji-picker-constants-emoji-container-padding-horizontal: 0px;
     --custom-emoji-picker-constants-emoji-container-padding-vertical: 0px;
 }
+
+.vc-ei-emojis [class*="emojiListRow_"] li {
+    overflow: visible;
+}
+
+.vc-ei-emojis [class*="list_"] [class*="header_"],
+.vc-ei #sticker-picker-grid :is([class*="packHeader_"], [class*="bleedHeader_"]) {
+    z-index: 4;
+    background-color: var(--q-bg);
+}
+
+.vc-ei [class*="emptyGuildUpsell_"][class*="emptyGuildUpsell_"] {
+    position: relative;
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border: 1px solid var(--q-line);
+    border-radius: 0;
+    background: var(--q-card);
+}
+
+.vc-ei [class*="emptyGuildUpsell_"]::before {
+    content: "";
+    position: absolute;
+    left: 12px;
+    top: -1px;
+    width: 32px;
+    height: 2px;
+    background: var(--q-accent);
+}
+
+.vc-ei [class*="emptyGuildUpsell_"] > svg {
+    margin: 0;
+    color: var(--q-sub);
+}
+
+.vc-ei [class*="emptyGuildUpsell_"] > :not(svg, button) {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    color: var(--q-t2);
+    font-size: 13px;
+    line-height: 1.3;
+}
+
+.vc-ei [class*="emptyGuildUpsell_"] button[data-mana-component="text-button"] {
+    height: 30px;
+    padding: 0 12px;
+    border: 1px solid var(--q-line-strong);
+    border-radius: 0;
+    background: transparent;
+    color: var(--q-text);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color 140ms var(--q-ease), box-shadow 140ms var(--q-ease);
+}
+
+.vc-ei [class*="emptyGuildUpsell_"] button[data-mana-component="text-button"] > * {
+    color: inherit;
+    font: 600 11px/1 var(--q-display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.vc-ei [class*="emptyGuildUpsell_"] button[data-mana-component="text-button"]:hover {
+    border-color: var(--q-accent);
+    box-shadow: inset 0 -2px 0 var(--q-accent), var(--q-glow);
+}
+
+@supports (corner-shape: bevel) {
+    .vc-ei [class*="emptyGuildUpsell_"][class*="emptyGuildUpsell_"] {
+        border-radius: 8px 0 8px 0;
+        corner-shape: bevel;
+    }
+
+    .vc-ei [class*="emptyGuildUpsell_"] button[data-mana-component="text-button"] {
+        border-radius: 5px;
+        corner-shape: bevel;
+    }
+}
