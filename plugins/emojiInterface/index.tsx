@@ -7,6 +7,7 @@ import { findStoreLazy } from "@webpack";
 import { EmojiStore, FluxDispatcher, React, UserSettingsActionCreators, UserStore, useEffect, useLayoutEffect, useRef, useState } from "@webpack/common";
 import type { ImgHTMLAttributes, MouseEvent as ReactMouseEvent, SyntheticEvent } from "react";
 
+import { Kind, messageMenu, pickerMenu, PlusButton, restoreCloner, revokeUrls, SavedPanel, SavedStrip } from "./saved";
 import managedStyle from "./styles.css?managed";
 
 const MIN_HEIGHT = 280;
@@ -17,6 +18,8 @@ const CHECK_TIMEOUT = 15000;
 const CHECK_WORKERS = 6;
 const CATEGORY = "category:";
 const GIF_GAP = 4;
+const BOOKMARK = "M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z";
+const PLACES: ["tab" | "inline" | "both", string][] = [["tab", "Saved tab"], ["inline", "Inside tabs"], ["both", "Both"]];
 const COG = "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0";
 const MAX_EMOJIS = 250;
 const MAX_GIF_BYTES = 762880;
@@ -43,7 +46,7 @@ interface Favorites {
     gifs: Record<string, Gif>;
 }
 
-const settings = definePluginSettings({
+export const settings = definePluginSettings({
     columns: {
         type: OptionType.SELECT,
         description: "GIFs per row",
@@ -72,6 +75,19 @@ const settings = definePluginSettings({
         type: OptionType.BOOLEAN,
         description: "Size stickers and emojis to the picker's width",
         default: true
+    },
+    savedPlace: {
+        type: OptionType.SELECT,
+        description: "Where saved emojis and stickers show",
+        options: PLACES.map(([value, label]) => ({ label, value, default: value === "tab" }))
+    },
+    savedSend: {
+        type: OptionType.SELECT,
+        description: "How to send a saved emoji or sticker the current account can't use",
+        options: [
+            { label: "Attach the saved file", value: "file", default: true },
+            { label: "Paste its link", value: "link" }
+        ]
     },
     gifStart: {
         type: OptionType.STRING,
@@ -397,12 +413,13 @@ function Option({ label, value, onChange }: { label: string; value: boolean; onC
     );
 }
 
-let panelOpen = false;
+type View = "" | "settings" | "saved";
+let panelView: View = "";
 const panelListeners = new Set<() => void>();
 
-function setPanel(open: boolean) {
-    if (panelOpen === open) return;
-    panelOpen = open;
+function setPanel(view: View) {
+    if (panelView === view) return;
+    panelView = view;
     panelListeners.forEach(listener => listener());
     nudge();
 }
@@ -412,14 +429,24 @@ function subscribePanel(listener: () => void) {
     return () => { panelListeners.delete(listener); };
 }
 
-const usePanel = () => React.useSyncExternalStore(subscribePanel, () => panelOpen);
+const usePanel = () => React.useSyncExternalStore(subscribePanel, () => panelView);
 
-function SettingsTab() {
-    const open = usePanel();
+function PanelTab({ view, id, label, panel, icon }: { view: View; id: string; label: string; panel: string; icon: string; }) {
+    const open = usePanel() === view;
     return (
-        <button type="button" role="tab" id="vc-ei-tab" className="vc-ei-tab" aria-label="Picker settings" aria-selected={open} aria-controls="vc-ei-panel" onClick={() => setPanel(!open)}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d={COG} /></svg>
+        <button type="button" role="tab" id={id} className="vc-ei-tab" aria-label={label} title={label} aria-selected={open} aria-controls={panel} onClick={() => setPanel(open ? "" : view)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icon} /></svg>
         </button>
+    );
+}
+
+function PanelTabs() {
+    const { savedPlace } = settings.use(["savedPlace"]);
+    return (
+        <div className="vc-ei-tabs" role="presentation">
+            {savedPlace !== "inline" && <PanelTab view="saved" id="vc-ei-saved-tab" label="Saved" panel="vc-ei-saved-panel" icon={BOOKMARK} />}
+            <PanelTab view="settings" id="vc-ei-tab" label="Picker settings" panel="vc-ei-panel" icon={COG} />
+        </div>
     );
 }
 
@@ -445,8 +472,21 @@ function StartView() {
     );
 }
 
+function Choices<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: [T, string][]; onChange(value: T): void; }) {
+    return (
+        <div className="vc-ei-option">
+            <span className="vc-ei-label">{label}</span>
+            <div className="vc-ei-choices" role="group" aria-label={label}>
+                {options.map(([key, text]) => (
+                    <button key={key} type="button" className="vc-ei-choice" aria-pressed={value === key} onClick={() => onChange(key)}>{text}</button>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 function Panel({ onReset }: { onReset(): void; }) {
-    const { columns, hoverPlay, autoAnimate, scale } = settings.use(["columns", "hoverPlay", "autoAnimate", "scale"]);
+    const { columns, hoverPlay, autoAnimate, scale, savedPlace, savedSend } = settings.use(["columns", "hoverPlay", "autoAnimate", "scale", "savedPlace", "savedSend"]);
     return (
         <div className="vc-ei-panel" id="vc-ei-panel" role="tabpanel" aria-labelledby="vc-ei-tab">
             <div className="vc-ei-option">
@@ -461,6 +501,8 @@ function Panel({ onReset }: { onReset(): void; }) {
             <Option label="Play GIFs only on hover" value={hoverPlay} onChange={setHoverPlay} />
             <Option label="Play emojis and stickers automatically" value={autoAnimate} onChange={on => settings.store.autoAnimate = on} />
             <Option label="Size stickers and emojis to the picker" value={scale} onChange={on => settings.store.scale = on} />
+            <Choices label="Saved items show in" value={savedPlace} options={PLACES} onChange={place => settings.store.savedPlace = place} />
+            <Choices label="Send saved items you can't use as" value={savedSend} options={[["file", "File"], ["link", "Link"]]} onChange={how => settings.store.savedSend = how} />
             <div className="vc-ei-option">
                 <span className="vc-ei-label">Picker size</span>
                 <button type="button" className="vc-ei-button" onClick={onReset}>Reset size</button>
@@ -472,7 +514,7 @@ function Panel({ onReset }: { onReset(): void; }) {
 
 function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; side: string; }) {
     const ref = useRef<HTMLDivElement>(null);
-    const open = usePanel();
+    const view = usePanel();
     const { scale } = settings.use(["scale"]);
     const section = () => ref.current?.closest("section");
 
@@ -481,7 +523,7 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
         if (!drawer) return;
         const close = (e: MouseEvent) => {
             const tab = (e.target as Element).closest?.('[role="tab"]');
-            if (tab && tab.id !== "vc-ei-tab") setPanel(false);
+            if (tab && !tab.classList.contains("vc-ei-tab")) setPanel("");
         };
         const resize = (e: MouseEvent) => {
             if ((e.target as Element).matches?.('[class*="resizeHandle_"]')) freeze(drawer);
@@ -494,7 +536,7 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
             drawer.removeEventListener("pointerover", onHover);
             drawer.removeEventListener("mousedown", resize, true);
             hovered = null;
-            setPanel(false);
+            setPanel("");
         };
     }, []);
 
@@ -558,7 +600,8 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
         <>
             <div ref={ref} className="vc-ei-edge" onMouseDown={e => { e.stopPropagation(); drag(e); }} onDoubleClick={resetHeight} />
             <div className={`vc-ei-corner vc-ei-corner-${side}`} style={{ [side]: -4 }} onMouseDown={e => { drag(e); onWidthDown(e); }} />
-            {open && <Panel onReset={resetSize} />}
+            {view === "settings" && <Panel onReset={resetSize} />}
+            {view === "saved" && <SavedPanel />}
             <div className="vc-ei-preview" aria-hidden="true"><span /></div>
         </>
     );
@@ -606,6 +649,11 @@ export default definePlugin({
     managedStyle,
     settings,
 
+    contextMenus: {
+        "message": messageMenu,
+        "expression-picker": pickerMenu
+    },
+
     patches: [
         {
             find: "handleDrawerResizeHandleMouseDown",
@@ -627,6 +675,14 @@ export default definePlugin({
                     replace: "$&$self.renderTab(),"
                 },
                 {
+                    match: /showAddEmojiButton:null==\i\|\|null!=\i\.guild_id/,
+                    replace: "showAddEmojiButton:!0"
+                },
+                {
+                    match: /(children:)(\(0,\i\.jsx\)\(\i,\{ref:\i,onKeyDown:\i,stickersListRef:\i,channel:\i\}\))/,
+                    replace: '$1[$2,$self.renderPlus("sticker"),$self.renderStrip("sticker")]'
+                },
+                {
                     match: /preferAnimation:\i<=\i,/,
                     replace: "preferAnimation:$self.settings.store.autoAnimate,"
                 },
@@ -642,6 +698,14 @@ export default definePlugin({
                 {
                     match: /"tabpanel":void 0,className:/,
                     replace: '$&"vc-ei-emojis "+'
+                },
+                {
+                    match: /(\{channel:\i,closePopout:\i\}=\i,.{0,600}?)\(0,\i\.jsx\)\(\i\.\i,\{text:[^,]+,variant:"secondary",onClick:(function\(\)\{\i\.current\?\.activateUploadDialogue\(\)\}),disabled:(\i\|\|\i)\}\)/,
+                    replace: '$1$self.renderPlus("emoji",$2,$3)'
+                },
+                {
+                    match: /\?\(0,\i\.jsx\)\(\i,\{channel:\i,closePopout:\i\}\):null(?=\])/,
+                    replace: '$&,$self.renderStrip("emoji")'
                 },
                 {
                     match: /(isInspected:(\i),isDisabled:\i,showPulse:.{0,1400}?allowAnimatedEmoji:)(\i)(,isLocked:)/,
@@ -714,6 +778,8 @@ export default definePlugin({
     stop() {
         document.getElementById("vc-ei-font")?.remove();
         clearTimeout(nudgeTimer);
+        restoreCloner();
+        revokeUrls();
     },
 
     renderFrame(onWidthDown: (e: ReactMouseEvent) => void, side: string) {
@@ -727,7 +793,23 @@ export default definePlugin({
     renderTab() {
         return (
             <ErrorBoundary noop>
-                <SettingsTab />
+                <PanelTabs />
+            </ErrorBoundary>
+        );
+    },
+
+    renderPlus(kind: Kind, onUpload?: () => void, uploadDisabled?: boolean) {
+        return (
+            <ErrorBoundary noop>
+                <PlusButton kind={kind} onUpload={onUpload} uploadDisabled={uploadDisabled} />
+            </ErrorBoundary>
+        );
+    },
+
+    renderStrip(kind: Kind) {
+        return (
+            <ErrorBoundary noop>
+                <SavedStrip kind={kind} />
             </ErrorBoundary>
         );
     },
