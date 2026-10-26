@@ -49,25 +49,3 @@ Don't run `install.ps1` on the development PC. Vesktop there loads `vencord\dist
 - `node_modules` and `packages` are junctions to Vencord's, so plugins can import its packages, such as `@vencord/discord-types`.
 
 You need git and Node 22 or newer. pnpm runs through corepack, so it needs no separate install.
-
-### Setup
-
-1. Run `.\update.ps1`. It clones Vencord, links `plugins/`, installs dependencies and builds.
-2. In Vesktop, open Settings > Vesktop (under Vencord Settings), scroll to Developer Options and click Open Developer Settings. Under Vencord Location, click Change and pick the `vencord\dist` folder the script printed. Quit Vesktop from the tray and start it again.
-3. Turn the plugins on in Settings > Vencord > Plugins.
-
-### Writing a plugin
-
-1. Copy `plugins/_template` to a new folder whose name doesn't start with `_`. The build skips folders that start with `_` or `.`.
-2. Run `corepack pnpm watch` inside `vencord/`. It rebuilds on every save.
-3. Press Ctrl+R in Vesktop to reload.
-4. Typecheck with `node vencord\node_modules\typescript\bin\tsc -p tsconfig.json --noEmit` from the repo root.
-
-Stop the watcher when you're done.
-
-### Updates on the development PC
-
-- Vesktop updates itself as usual. The custom Vencord Location doesn't change that.
-- Vencord updates through Settings > Vencord > Updater. On this build the updater runs `git pull` and rebuilds, and with automatic updates on it does that when Vesktop starts. Upstream gitignores `src/userplugins`, so updates never touch `plugins/`.
-- The in-app updater doesn't install dependencies. If an update fails to build, run `.\update.ps1`.
-- Pulls in `vencord/` must stay fast-forward, which is why nothing in it is edited.
