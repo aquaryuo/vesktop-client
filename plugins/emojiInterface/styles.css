@@ -1197,26 +1197,6 @@
     gap: 2px;
 }
 
-.vc-ei-tag-delete {
-    height: 28px;
-    min-width: 24px;
-    padding: 0 6px;
-    border: 0;
-    background: none;
-    color: var(--q-sub);
-    font: 600 11px/1 var(--q-display);
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: color 140ms var(--q-ease);
-}
-
-.vc-ei-tag-delete:hover,
-.vc-ei-tag-delete:focus-visible {
-    color: #f04f6e;
-    outline: none;
-}
-
 .vc-ei-tag-input {
     width: 128px;
     height: 28px;
@@ -1365,4 +1345,8 @@
         border-radius: 10px 0 10px 0;
         corner-shape: bevel;
     }
+}
+
+.vc-ei #sticker-picker-grid {
+    --custom-stickers-constants-sticker-picker-preview-margin: 4px;
 }

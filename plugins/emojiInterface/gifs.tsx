@@ -1,5 +1,6 @@
 import * as DataStore from "@api/DataStore";
-import { React, useEffect, useState } from "@webpack/common";
+import { ContextMenuApi, Menu, React, useEffect, useState } from "@webpack/common";
+import type { MouseEvent as ReactMouseEvent } from "react";
 
 import { settings } from ".";
 
@@ -197,7 +198,7 @@ export function pickerGone(instance: { forceUpdate(): void; }) {
     picker = null;
     editing = false;
     brush = [];
-    filter = armed = "";
+    filter = armed = renaming = "";
 }
 
 export function stopGifs() {
@@ -206,59 +207,69 @@ export function stopGifs() {
     picker = null;
     editing = false;
     brush = [];
-    filter = armed = "";
+    filter = armed = renaming = "";
 }
 
-function EditableTag({ tag }: { tag: Tag; }) {
-    const [renaming, setRenaming] = useState(false);
+let renaming = "";
+
+function RenameTag({ tag }: { tag: Tag; }) {
     const [value, setValue] = useState(tag.name);
-    const [confirm, setConfirm] = useState(false);
-    const builtIn = tag.id === SPOILER;
-
-    if (renaming) {
-        const commit = () => {
-            if (!renameTag(tag.id, value)) setValue(tag.name);
-            setRenaming(false);
-        };
-        return (
-            <input
-                className="vc-ei-input vc-ei-tag-input"
-                value={value}
-                maxLength={MAX_NAME}
-                autoFocus
-                aria-label={`Rename ${tag.name}`}
-                onChange={e => setValue(e.currentTarget.value)}
-                onBlur={commit}
-                onKeyDown={e => {
-                    e.stopPropagation();
-                    if (e.key === "Enter") commit();
-                    if (e.key === "Escape") {
-                        setValue(tag.name);
-                        setRenaming(false);
-                    }
-                }}
-            />
-        );
-    }
-
+    const finish = (save: boolean) => {
+        if (save) renameTag(tag.id, value);
+        renaming = "";
+        refresh();
+    };
     return (
-        <span className="vc-ei-tag" onMouseLeave={() => setConfirm(false)}>
-            <button
-                type="button"
-                className="vc-ei-choice"
-                aria-pressed={brush.includes(tag.id)}
-                title={builtIn ? "Spoiler tags send the GIF as a spoiler" : "Click to apply, double-click to rename"}
-                onClick={() => { brush = brush.includes(tag.id) ? brush.filter(id => id !== tag.id) : [...brush, tag.id]; refresh(); }}
-                onDoubleClick={() => { if (!builtIn) { setValue(tag.name); setRenaming(true); } }}
-            >
-                {tag.name}
-            </button>
-            {!builtIn && (
-                <button type="button" className="vc-ei-tag-delete" aria-label={confirm ? `Confirm deleting ${tag.name}` : `Delete ${tag.name}`} onClick={() => confirm ? deleteTag(tag.id) : setConfirm(true)}>
-                    {confirm ? "Delete?" : "×"}
-                </button>
-            )}
-        </span>
+        <input
+            className="vc-ei-input vc-ei-tag-input"
+            value={value}
+            maxLength={MAX_NAME}
+            autoFocus
+            aria-label={`Rename ${tag.name}`}
+            onChange={e => setValue(e.currentTarget.value)}
+            onBlur={() => finish(true)}
+            onKeyDown={e => {
+                e.stopPropagation();
+                if (e.key === "Enter") finish(true);
+                if (e.key === "Escape") finish(false);
+            }}
+        />
+    );
+}
+
+function openTagMenu(e: ReactMouseEvent, tag: Tag) {
+    const builtIn = tag.id === SPOILER;
+    const entries = [
+        !editing && <Menu.MenuItem key="filter" id="vc-ei-tag-filter" label={filter === tag.id ? "Show all favorites" : "Show GIFs with this tag"} action={() => { filter = filter === tag.id ? "" : tag.id; refresh(); }} />,
+        !builtIn && <Menu.MenuItem key="rename" id="vc-ei-tag-rename" label="Rename tag" action={() => { renaming = tag.id; refresh(); }} />,
+        !builtIn && <Menu.MenuItem key="delete" id="vc-ei-tag-delete" label="Delete tag" color="danger" action={() => deleteTag(tag.id)} />
+    ].filter(Boolean);
+    if (!entries.length) return;
+    ContextMenuApi.openContextMenu(e, () => (
+        <Menu.Menu navId="vc-ei-tag" onClose={ContextMenuApi.closeContextMenu} aria-label={tag.name}>
+            {entries}
+        </Menu.Menu>
+    ));
+}
+
+function TagChip({ tag }: { tag: Tag; }) {
+    if (renaming === tag.id) return <RenameTag tag={tag} />;
+    const pressed = editing ? brush.includes(tag.id) : filter === tag.id;
+    return (
+        <button
+            type="button"
+            className="vc-ei-choice"
+            aria-pressed={pressed}
+            title={tag.id === SPOILER ? "Spoiler GIFs are sent as spoilers" : "Right-click to rename or delete"}
+            onClick={() => {
+                if (editing) brush = brush.includes(tag.id) ? brush.filter(id => id !== tag.id) : [...brush, tag.id];
+                else filter = filter === tag.id ? "" : tag.id;
+                refresh();
+            }}
+            onContextMenu={e => openTagMenu(e, tag)}
+        >
+            {tag.name}
+        </button>
     );
 }
 
@@ -298,14 +309,9 @@ export function GifTools() {
     return (
         <div className="vc-ei-giftools" data-vc-ei-editing={editing || undefined}>
             <div className="vc-ei-chips" role="group" aria-label={editing ? "Tags to apply, pick one or more" : "Filter favorites by tag"}>
-                {editing
-                    ? <>{tags.map(tag => <EditableTag key={tag.id} tag={tag} />)}<NewTag /></>
-                    : <>
-                        <button type="button" className="vc-ei-choice" aria-pressed={!filter} onClick={() => { filter = ""; refresh(); }}>All</button>
-                        {tags.map(tag => (
-                            <button key={tag.id} type="button" className="vc-ei-choice" aria-pressed={filter === tag.id} onClick={() => { filter = filter === tag.id ? "" : tag.id; refresh(); }}>{tag.name}</button>
-                        ))}
-                    </>}
+                {!editing && <button type="button" className="vc-ei-choice" aria-pressed={!filter} onClick={() => { filter = ""; refresh(); }}>All</button>}
+                {tags.map(tag => <TagChip key={tag.id} tag={tag} />)}
+                {editing && <NewTag />}
             </div>
             <button type="button" className="vc-ei-choice vc-ei-edit" aria-pressed={editing} onClick={() => { editing = !editing; brush = []; disarm(); refresh(); }}>{editing ? "Done" : "Edit"}</button>
             {editing && <p className="vc-ei-hint" role="status">{brushName ? `Click GIFs to add or remove ${brushName}.` : "Pick one or more tags, then click GIFs to tag them."}</p>}

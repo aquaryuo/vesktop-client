@@ -468,6 +468,7 @@ function freeze(drawer: HTMLElement) {
 }
 
 const grids = new Set<{ forceUpdate(): void; }>();
+let stickerGrid = { width: -1, node: 0 };
 let nudgeTimer: ReturnType<typeof setTimeout> | undefined;
 
 function nudge() {
@@ -804,6 +805,18 @@ export default definePlugin({
                     replace: '$1[$2,$self.renderPlus("sticker"),$self.renderStrip("sticker")]'
                 },
                 {
+                    match: /listWidth:(\i),listPaddingRight:(\i),stickerNodeMargin:\i\?\i:\i,stickerNodeWidth:(\i\?\i:\i)/,
+                    replace: `listWidth:$1,listPaddingRight:$2,stickerNodeMargin:${GIF_GAP},stickerNodeWidth:$self.stickerNode($1,$2,$3)`
+                },
+                {
+                    match: /stickerSize:((\i)>\i\?\i:\i)(?=,stickerPadding:1)/,
+                    replace: "stickerSize:$self.stickerSize($2,$1)"
+                },
+                {
+                    match: /rowHeight:((\i)>\i\?\i:\i)(?=,sectionHeaderHeight)/,
+                    replace: "rowHeight:$self.stickerRow($2,$1)"
+                },
+                {
                     match: /preferAnimation:\i<=\i,/,
                     replace: "preferAnimation:$self.settings.store.autoAnimate,"
                 },
@@ -950,6 +963,23 @@ export default definePlugin({
     trackGif,
     untrackGif,
     pickerGone,
+
+    stickerNode(width: number, pad: number, base: number) {
+        if (!width) return base;
+        const room = width - pad;
+        const cols = Math.max(2, Math.round((room + GIF_GAP) / (base + GIF_GAP)));
+        const node = Math.max(24, Math.floor((room - GIF_GAP * (cols - 1)) / cols));
+        stickerGrid = { width, node };
+        return node;
+    },
+
+    stickerSize(width: number, fallback: number) {
+        return stickerGrid.width === width ? stickerGrid.node - 2 : fallback;
+    },
+
+    stickerRow(width: number, fallback: number) {
+        return stickerGrid.width === width ? stickerGrid.node + GIF_GAP : fallback;
+    },
 
     renderTagEmpty(query?: string) {
         return tagEmpty(query);
