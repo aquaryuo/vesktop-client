@@ -147,10 +147,12 @@ export function allowGif(gif: Gif, extra?: { shiftKey?: boolean; }) {
 }
 
 export function gifFlags(gif?: Gif) {
+    const selected = editing && brush.length > 0 && brush.every(tag => has(gif, tag));
     return {
         "data-vc-ei-spoiler": has(gif, SPOILER) || undefined,
         "data-vc-ei-armed": (!!armed && armed === gif?.url) || undefined,
-        "data-vc-ei-brush": (editing && brush.length > 0 && brush.every(tag => has(gif, tag))) || undefined
+        "data-vc-ei-brush": selected || undefined,
+        "data-vc-ei-tags": selected ? allTags().filter(tag => has(gif, tag.id)).map(tag => tag.name).join(", ") : undefined
     };
 }
 

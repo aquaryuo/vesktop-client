@@ -1270,17 +1270,30 @@
     box-shadow: 0 0 0 2px var(--q-accent), var(--q-glow) !important;
 }
 
+.vc-ei [class*="result_"][data-vc-ei-brush] :is(img, video, canvas) {
+    filter: grayscale(1) brightness(0.45);
+    transition: filter 160ms var(--q-ease);
+}
+
 .vc-ei [class*="result_"][data-vc-ei-brush]::after {
-    content: "✓";
-    inset: 6px 6px auto auto;
+    content: "Selected\A" attr(data-vc-ei-tags);
+    inset: 0;
     z-index: 3;
     display: grid;
-    place-items: center;
-    width: 22px;
-    height: 22px;
-    background: var(--q-accent);
-    color: #fff;
-    font: 700 12px/1 var(--q-display);
+    place-content: center;
+    padding: 8px;
+    background: color-mix(in srgb, var(--q-bg) 30%, transparent);
+    color: var(--q-text);
+    font: 600 11px/1.6 var(--q-display);
+    letter-spacing: 0.14em;
+    text-align: center;
+    text-transform: uppercase;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+
+.vc-ei [class*="result_"][data-vc-ei-brush][data-vc-ei-spoiler]::before {
+    display: none;
 }
 
 .vc-ei[data-vc-ei-drop]::after {
