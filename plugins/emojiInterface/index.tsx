@@ -699,11 +699,16 @@ function uploadChannels(guildId: string): any[] {
 function StorageChannel() {
     const { storageChannel } = settings.use(["storageChannel"]);
     const [guildId, setGuildId] = useState(() => ChannelStore.getChannel(storageChannel)?.guild_id ?? "");
-    const guilds = Object.values(GuildStore.getGuilds()).sort((a, b) => a.name.localeCompare(b.name));
+    const [owned, setOwned] = useState(true);
+    const me = UserStore.getCurrentUser()?.id;
+    const guilds = Object.values(GuildStore.getGuilds())
+        .filter(guild => !owned || guild.ownerId === me || guild.id === guildId)
+        .sort((a, b) => a.name.localeCompare(b.name));
     const channels = guildId ? uploadChannels(guildId) : [];
     return (
         <div className="vc-ei-option">
             <label className="vc-ei-label" htmlFor="vc-ei-store-guild">Post GIF files to</label>
+            <button type="button" className="vc-ei-choice" aria-pressed={owned} onClick={() => setOwned(!owned)}>Only servers I own</button>
             <select id="vc-ei-store-guild" className="vc-ei-select" value={guildId} onChange={e => { setGuildId(e.currentTarget.value); settings.store.storageChannel = ""; }}>
                 <option value="">Pick a server</option>
                 {guilds.map(guild => <option key={guild.id} value={guild.id}>{guild.name}</option>)}
