@@ -3,6 +3,7 @@ import ErrorBoundary from "@components/ErrorBoundary";
 import { classes } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { chooseFile, saveFile } from "@utils/web";
+import { findStoreLazy } from "@webpack";
 import { EmojiStore, FluxDispatcher, React, UserSettingsActionCreators, UserStore, useEffect, useLayoutEffect, useRef, useState } from "@webpack/common";
 import type { ImgHTMLAttributes, MouseEvent as ReactMouseEvent, SyntheticEvent } from "react";
 
@@ -14,6 +15,7 @@ const MAX_ZOOM = 2;
 const COLUMNS = [0, 2, 3, 4, 5, 6, 7, 8];
 const CHECK_TIMEOUT = 15000;
 const CHECK_WORKERS = 6;
+const CATEGORY = "category:";
 const COG = "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0";
 const MAX_EMOJIS = 250;
 const MAX_GIF_BYTES = 762880;
@@ -59,6 +61,12 @@ const settings = definePluginSettings({
         description: "Size stickers and emojis to the picker's width",
         default: true
     },
+    gifStart: {
+        type: OptionType.STRING,
+        description: "What the GIF tab opens on",
+        default: "",
+        hidden: true
+    },
     height: {
         type: OptionType.NUMBER,
         description: "Picker height in pixels, 0 for Discord's. Drag the picker's top edge to set it, or double-click the edge to reset it",
@@ -71,6 +79,7 @@ const settings = definePluginSettings({
 });
 
 const frecency = () => UserSettingsActionCreators.FrecencyUserSettingsActionCreators;
+const GIFPickerViewStore = findStoreLazy("GIFPickerViewStore");
 
 function protoField(name: string) {
     const field = frecency().ProtoClass?.fields?.find((f: any) => f.localName === name);
@@ -370,6 +379,24 @@ function SettingsTab() {
     );
 }
 
+function StartView() {
+    const { gifStart } = settings.use(["gifStart"]);
+    const names: string[] = (GIFPickerViewStore.getTrendingCategories?.() ?? []).filter((c: any) => c.type === "Category").map((c: any) => c.name);
+    const saved = gifStart.startsWith(CATEGORY) ? gifStart.slice(CATEGORY.length) : "";
+    if (saved && !names.includes(saved)) names.unshift(saved);
+    return (
+        <div className="vc-ei-option">
+            <label className="vc-ei-label" htmlFor="vc-ei-start">GIF tab opens on</label>
+            <select id="vc-ei-start" className="vc-ei-select" value={gifStart} onChange={e => settings.store.gifStart = e.currentTarget.value}>
+                <option value="">Categories</option>
+                <option value="favorites">Favorites</option>
+                <option value="trending">Trending GIFs</option>
+                {names.map(name => <option key={name} value={CATEGORY + name}>{name}</option>)}
+            </select>
+        </div>
+    );
+}
+
 function Panel({ onReset }: { onReset(): void; }) {
     const { columns, hoverPlay, scale } = settings.use(["columns", "hoverPlay", "scale"]);
     return (
@@ -382,6 +409,7 @@ function Panel({ onReset }: { onReset(): void; }) {
                     ))}
                 </div>
             </div>
+            <StartView />
             <Option label="Play GIFs only on hover" value={hoverPlay} onChange={setHoverPlay} />
             <Option label="Size stickers and emojis to the picker" value={scale} onChange={on => settings.store.scale = on} />
             <div className="vc-ei-option">
@@ -535,6 +563,13 @@ export default definePlugin({
             }
         },
         {
+            find: "backToFrontPage=",
+            replacement: {
+                match: /(""!==this\.props\.query&&this\.search\(this\.props\.query,(\i\.\i)\.SEARCH\))\}/,
+                replace: "$1,$self.startView(this,$2)}"
+            }
+        },
+        {
             find: "oncanplay=this.handleCanPlay",
             replacement: [
                 {
@@ -592,6 +627,15 @@ export default definePlugin({
                 <SettingsTab />
             </ErrorBoundary>
         );
+    },
+
+    startView(picker: { props: { query?: string; hideFavorites?: boolean; }; handleSelectItem(type: string, name?: string): void; }, types: Record<string, string>) {
+        const view = settings.store.gifStart;
+        if (!view || picker.props.query) return;
+        if (view === "favorites") {
+            if (!picker.props.hideFavorites) picker.handleSelectItem(types.FAVORITES);
+        } else if (view === "trending") picker.handleSelectItem(types.TRENDING_GIFS);
+        else if (view.startsWith(CATEGORY)) picker.handleSelectItem(types.TRENDING_CATEGORY, view.slice(CATEGORY.length));
     },
 
     columns(width: number, itemWidth: number, max: number) {
