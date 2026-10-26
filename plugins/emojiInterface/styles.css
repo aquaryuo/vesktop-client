@@ -1,0 +1,391 @@
+.vc-ei,
+.vc-ei-emojis,
+.vc-ei-transfer {
+    --q-bg: #0a0a0f;
+    --q-card: #101018;
+    --q-text: #e4e4ef;
+    --q-sub: #8888a4;
+    --q-accent: #7c5cfc;
+    --q-line-faint: color-mix(in srgb, var(--q-text) 8%, transparent);
+    --q-line: color-mix(in srgb, var(--q-text) 14%, transparent);
+    --q-line-strong: color-mix(in srgb, var(--q-text) 28%, transparent);
+    --q-t2: color-mix(in srgb, var(--q-text) 66%, transparent);
+    --q-fill-soft: color-mix(in srgb, var(--q-text) 4%, transparent);
+    --q-fill: color-mix(in srgb, var(--q-text) 8%, transparent);
+    --q-solid: color-mix(in srgb, var(--q-text) 92%, transparent);
+    --q-glow: 0 0 18px -6px var(--q-accent);
+    --q-display: "Chakra Petch", "Roboto", system-ui, sans-serif;
+    --q-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --background-surface-high: var(--q-bg);
+    --background-surface-higher: var(--q-card);
+    --background-surface-highest: var(--q-card);
+    --background-base-lowest: var(--q-bg);
+    --background-base-lower: var(--q-card);
+    --background-base-low: var(--q-card);
+    --background-mod-subtle: var(--q-fill-soft);
+    --background-mod-muted: var(--q-fill-soft);
+    --background-mod-normal: var(--q-fill);
+    --background-mod-strong: color-mix(in srgb, var(--q-text) 12%, transparent);
+    --background-brand: var(--q-accent);
+    --background-scrim: color-mix(in srgb, var(--q-bg) 55%, transparent);
+    --brand-500: var(--q-accent);
+    --border-subtle: var(--q-line-faint);
+    --border-normal: var(--q-line);
+    --border-strong: var(--q-line-strong);
+    --border-focus: var(--q-accent);
+    --text-default: var(--q-text);
+    --text-strong: var(--q-text);
+    --text-muted: var(--q-sub);
+    --header-primary: var(--q-text);
+    --header-secondary: var(--q-sub);
+    --icon-strong: var(--q-text);
+    --interactive-text-default: var(--q-sub);
+    --interactive-text-hover: var(--q-text);
+    --interactive-text-active: var(--q-text);
+    --interactive-background-hover: var(--q-fill-soft);
+    --interactive-background-selected: color-mix(in srgb, var(--q-accent) 22%, transparent);
+    --control-secondary-background-hover: var(--q-fill-soft);
+    --control-secondary-background-active: var(--q-fill);
+    --input-background-default: color-mix(in srgb, var(--q-card) 60%, transparent);
+    --input-border-default: var(--q-line);
+    --background-gradient-low: color-mix(in srgb, var(--q-card) 60%, transparent);
+    --shadow-border: 0 0 0 1px var(--q-line);
+    --shadow-high: 0 30px 60px -30px #000;
+    --shadow-low: none;
+    --radius-xs: 0;
+    --radius-sm: 0;
+    --custom-emoji-picker-border-radius: 0;
+    scrollbar-color: var(--q-line) transparent;
+}
+
+.vc-ei > [class*="contentWrapper_"] {
+    border: 1px solid var(--q-line);
+    background: var(--q-bg);
+    box-shadow: 0 30px 60px -30px #000;
+}
+
+.vc-ei > [class*="contentWrapper_"]::before,
+.vc-ei-emojis:not(.vc-ei .vc-ei-emojis)::after {
+    content: "";
+    position: absolute;
+    left: 16px;
+    top: -1px;
+    z-index: 2;
+    width: 40px;
+    height: 2px;
+    background: var(--q-accent);
+    pointer-events: none;
+}
+
+.vc-ei [class*="navButton_"],
+.vc-ei [class*="navButtonActive_"] {
+    position: relative;
+    isolation: isolate;
+    padding: 9px 14px;
+    border-radius: 0;
+    background: none !important;
+    color: var(--q-sub);
+    font: 600 11px/1 var(--q-display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    transition: color 140ms var(--q-ease);
+}
+
+.vc-ei [class*="navButton_"]::before,
+.vc-ei [class*="navButtonActive_"]::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border: 1px solid var(--q-line);
+    transform: skewX(-20deg);
+    transition: border-color 140ms var(--q-ease), background-color 140ms var(--q-ease);
+}
+
+.vc-ei [class*="navButton_"]:hover {
+    color: var(--q-text);
+}
+
+.vc-ei [class*="navButton_"]:hover::before {
+    border-color: var(--q-line-strong);
+}
+
+.vc-ei [class*="navButton_"][class*="navButtonActive_"] {
+    color: var(--q-bg);
+}
+
+.vc-ei [class*="navButton_"][class*="navButtonActive_"]::before {
+    border-color: transparent;
+    background: var(--q-solid);
+}
+
+.vc-ei [class*="navButton_"]:focus-visible::before {
+    outline: 1px solid var(--q-accent);
+    outline-offset: 3px;
+}
+
+:is(.vc-ei, .vc-ei-emojis) [class*="searchBar_"] {
+    transition: border-color 140ms var(--q-ease), box-shadow 140ms var(--q-ease);
+}
+
+:is(.vc-ei, .vc-ei-emojis) [class*="searchBar_"]:hover {
+    border-color: var(--q-line-strong);
+}
+
+:is(.vc-ei, .vc-ei-emojis) [class*="searchBar_"]:focus-within {
+    border-color: var(--q-accent);
+    box-shadow: inset 0 -2px 0 var(--q-accent), var(--q-glow);
+}
+
+.vc-ei-emojis [class*="emojiItem_"][class*="emojiItem_"] {
+    border-radius: 0;
+    transition: background-color 140ms var(--q-ease), box-shadow 140ms var(--q-ease);
+}
+
+.vc-ei-emojis [class*="emojiItem_"][class*="emojiItemSelected_"] {
+    background-color: color-mix(in srgb, var(--q-accent) 18%, transparent);
+    box-shadow: inset 0 -2px 0 var(--q-accent);
+}
+
+.vc-ei-emojis [class*="categoryItemDefaultCategory_"][class*="categoryItemDefaultCategory_"] {
+    border-radius: 0;
+}
+
+.vc-ei-emojis [class*="categoryItemDefaultCategory_"][class*="categoryItemDefaultCategorySelected_"] {
+    background-color: color-mix(in srgb, var(--q-accent) 18%, transparent);
+    box-shadow: inset 2px 0 0 var(--q-accent);
+}
+
+.vc-ei-emojis [class*="inspector_"] {
+    border-top: 1px solid var(--q-line-faint);
+    background: var(--q-card);
+}
+
+.vc-ei [class*="result_"][class*="result_"],
+.vc-ei [class*="gif_"][class*="gif_"],
+.vc-ei [class*="categoryFade_"][class*="categoryFade_"],
+.vc-ei [class*="categoryFadeBlurple_"][class*="categoryFadeBlurple_"],
+.vc-ei [class*="gifFavoriteButton_"][class*="gifFavoriteButton_"] {
+    border-radius: 0;
+}
+
+.vc-ei [class*="result_"][class*="result_"]::after {
+    border-radius: 0;
+}
+
+.vc-ei [class*="result_"][class*="result_"]:is(:hover, [data-focused="true"]) {
+    box-shadow: 0 0 0 1px var(--q-accent), var(--q-glow);
+}
+
+.vc-ei [class*="result_"][data-selected="true"][class*="result_"] {
+    box-shadow: 0 0 0 2px var(--q-accent), var(--q-glow);
+}
+
+.vc-ei [class*="categoryName_"][class*="categoryName_"] {
+    font: 600 13px/1.2 var(--q-display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.vc-ei-edge {
+    position: absolute;
+    inset-inline: 14px;
+    top: -4px;
+    z-index: 3;
+    height: 8px;
+    cursor: ns-resize;
+    touch-action: none;
+}
+
+.vc-ei-edge::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    top: 3px;
+    height: 2px;
+    background: transparent;
+    transition: background-color 140ms var(--q-ease);
+}
+
+.vc-ei-edge:hover::after {
+    background: var(--q-accent);
+}
+
+.vc-ei-corner {
+    position: absolute;
+    top: -4px;
+    z-index: 4;
+    width: 16px;
+    height: 16px;
+    touch-action: none;
+}
+
+.vc-ei-corner-left {
+    cursor: nwse-resize;
+}
+
+.vc-ei-corner-right {
+    cursor: nesw-resize;
+}
+
+.vc-ei > [class*="resizeHandle_"]::after {
+    content: "";
+    position: absolute;
+    inset-block: 14px;
+    left: 1px;
+    width: 2px;
+    background: transparent;
+    transition: background-color 140ms var(--q-ease);
+}
+
+.vc-ei > [class*="resizeHandle_"]:hover::after {
+    background: var(--q-accent);
+}
+
+.vc-ei-transfer {
+    position: relative;
+    box-sizing: border-box;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 16px;
+    padding: 16px;
+    border: 1px solid var(--q-line);
+    background: var(--q-bg);
+    color: var(--q-text);
+}
+
+.vc-ei-transfer::before {
+    content: "";
+    position: absolute;
+    left: 16px;
+    top: -1px;
+    width: 40px;
+    height: 2px;
+    background: var(--q-accent);
+}
+
+.vc-ei-transfer-text {
+    display: flex;
+    flex: 1 1 220px;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.vc-ei-transfer-text strong {
+    font: 600 12px/1 var(--q-display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.vc-ei-transfer-text span {
+    color: var(--q-t2);
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.vc-ei-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.vc-ei-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    height: 40px;
+    padding: 0 18px;
+    border: 1px solid var(--q-line-strong);
+    background: transparent;
+    color: var(--q-text);
+    font: 600 12px/1 var(--q-display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color 140ms var(--q-ease), box-shadow 140ms var(--q-ease), background-color 140ms var(--q-ease);
+}
+
+.vc-ei-button:hover {
+    border-color: var(--q-accent);
+    box-shadow: inset 0 -2px 0 var(--q-accent), var(--q-glow);
+}
+
+.vc-ei-button:active {
+    transform: translateY(1px);
+    background: var(--q-fill);
+    box-shadow: none;
+}
+
+.vc-ei-button:focus-visible {
+    outline: 1px solid var(--q-accent);
+    outline-offset: 3px;
+}
+
+.vc-ei-primary {
+    border-color: transparent;
+    background: var(--q-solid);
+    color: var(--q-bg);
+}
+
+.vc-ei-primary::after {
+    content: "";
+    flex: none;
+    width: 6px;
+    height: 6px;
+    background: var(--q-accent);
+    transform: rotate(45deg);
+}
+
+.vc-ei-primary:hover {
+    border-color: transparent;
+    background: var(--q-text);
+    box-shadow: none;
+}
+
+.vc-ei-primary:active {
+    background: color-mix(in srgb, var(--q-text) 84%, transparent);
+}
+
+.vc-ei-status {
+    flex: 1 1 100%;
+    margin: 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--q-line-faint);
+    color: var(--q-t2);
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+@supports (corner-shape: bevel) {
+    .vc-ei > [class*="contentWrapper_"],
+    .vc-ei-emojis:not(.vc-ei .vc-ei-emojis) > [class*="emojiPicker_"],
+    .vc-ei-transfer {
+        border-radius: 10px 0 10px 0;
+        corner-shape: bevel;
+    }
+
+    .vc-ei-button {
+        border-radius: 6px;
+        corner-shape: bevel;
+    }
+}
+
+@media (forced-colors: active) {
+    .vc-ei [class*="navButton_"][class*="navButtonActive_"] {
+        color: HighlightText;
+    }
+
+    .vc-ei [class*="navButton_"][class*="navButtonActive_"]::before {
+        background: Highlight;
+    }
+}
+
+.vc-ei-still:not(.vc-ei-ready),
+.vc-ei [data-focused]:is(:hover, [data-focused="true"]) .vc-ei-still,
+.vc-ei [data-focused]:not(:hover, [data-focused="true"]) .vc-ei-gif {
+    display: none;
+}
