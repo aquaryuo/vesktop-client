@@ -1456,3 +1456,8 @@
 .vc-ei #sticker-picker-grid [class*="assetWrapper_"] {
     overflow: visible;
 }
+
+.vc-ei-emojis {
+    --custom-emoji-picker-constants-emoji-container-padding-horizontal: 0px;
+    --custom-emoji-picker-constants-emoji-container-padding-vertical: 0px;
+}

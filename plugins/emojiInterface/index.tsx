@@ -834,8 +834,8 @@ export default definePlugin({
                     replace: `listWidth:$1,listPaddingRight:$2,stickerNodeMargin:$self.gap(),stickerNodeWidth:$self.stickerNode($1,$2,$3)`
                 },
                 {
-                    match: /stickerSize:((\i)>\i\?\i:\i)(?=,stickerPadding:1)/,
-                    replace: "stickerSize:$self.stickerSize($2,$1)"
+                    match: /stickerSize:((\i)>\i\?\i:\i),stickerPadding:1/,
+                    replace: "stickerSize:$self.stickerSize($2,$1+2),stickerPadding:0"
                 },
                 {
                     match: /rowHeight:((\i)>\i\?\i:\i)(?=,sectionHeaderHeight)/,
@@ -867,12 +867,12 @@ export default definePlugin({
                     replace: '$&,$self.renderStrip("emoji")'
                 },
                 {
-                    match: /Math\.floor\((\i)\/\((\i)\+2\*(\i)\)\)/,
-                    replace: "Math.floor(($1+$self.gap())/($2+2*$3+$self.gap()))"
+                    match: /Math\.floor\((\i)\/\((\i)\+2\*\i\)\)/,
+                    replace: "Math.floor(($1+$self.gap())/($2+$self.gap()))"
                 },
                 {
-                    match: /rowHeight:(\i)\+2\*(\i),sectionHeaderHeight/,
-                    replace: "rowHeight:$1+2*$2+$self.gap(),sectionHeaderHeight"
+                    match: /rowHeight:(\i)\+2\*\i,sectionHeaderHeight/,
+                    replace: "rowHeight:$1+$self.gap(),sectionHeaderHeight"
                 },
                 {
                     match: /(onActiveCategoryIndexChange:function\(\i\)\{[^}]*\},scrollOffset:)0/,
@@ -1022,7 +1022,7 @@ export default definePlugin({
     },
 
     stickerSize(width: number, fallback: number) {
-        return stickerGrid.width === width ? stickerGrid.node - 2 : fallback;
+        return stickerGrid.width === width ? stickerGrid.node : fallback;
     },
 
     stickerRow(width: number, fallback: number) {
