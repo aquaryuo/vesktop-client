@@ -4,7 +4,7 @@ import { classes } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { chooseFile, saveFile } from "@utils/web";
 import { findStoreLazy } from "@webpack";
-import { EmojiStore, FluxDispatcher, React, showToast, UserSettingsActionCreators, UserStore, useEffect, useLayoutEffect, useRef, useState } from "@webpack/common";
+import { ChannelStore, EmojiStore, FluxDispatcher, GuildChannelStore, GuildStore, PermissionsBits, PermissionStore, React, showToast, UserSettingsActionCreators, UserStore, useEffect, useLayoutEffect, useRef, useState } from "@webpack/common";
 import type { ImgHTMLAttributes, MouseEvent as ReactMouseEvent, SyntheticEvent } from "react";
 
 import { allowGif, filterGifs, gifContent, gifFlags, GifTools, pickerGone, pickerMounted, stopGifs, tagEmpty, trackGif, untrackGif } from "./gifs";
@@ -108,6 +108,17 @@ export const settings = definePluginSettings({
     pinned: {
         type: OptionType.BOOLEAN,
         description: "Keep the picker open when you click outside it",
+        default: false
+    },
+    storageChannel: {
+        type: OptionType.STRING,
+        description: "Channel GIF files are posted to so Discord can star them",
+        default: "",
+        hidden: true
+    },
+    randomNames: {
+        type: OptionType.BOOLEAN,
+        description: "Give files you upload or send from the picker a random name",
         default: false
     },
     gifStart: {
@@ -679,8 +690,37 @@ function Choices<T extends string>({ label, value, options, onChange }: { label:
     );
 }
 
+function uploadChannels(guildId: string): any[] {
+    return (GuildChannelStore.getChannels(guildId)?.SELECTABLE ?? [])
+        .map(({ channel }: any) => channel)
+        .filter((channel: any) => channel.type === 0 && PermissionStore.can(PermissionsBits.SEND_MESSAGES | PermissionsBits.ATTACH_FILES, channel));
+}
+
+function StorageChannel() {
+    const { storageChannel } = settings.use(["storageChannel"]);
+    const [guildId, setGuildId] = useState(() => ChannelStore.getChannel(storageChannel)?.guild_id ?? "");
+    const guilds = Object.values(GuildStore.getGuilds()).sort((a, b) => a.name.localeCompare(b.name));
+    const channels = guildId ? uploadChannels(guildId) : [];
+    return (
+        <div className="vc-ei-option">
+            <label className="vc-ei-label" htmlFor="vc-ei-store-guild">Post GIF files to</label>
+            <select id="vc-ei-store-guild" className="vc-ei-select" value={guildId} onChange={e => { setGuildId(e.currentTarget.value); settings.store.storageChannel = ""; }}>
+                <option value="">Pick a server</option>
+                {guilds.map(guild => <option key={guild.id} value={guild.id}>{guild.name}</option>)}
+            </select>
+            {guildId && (
+                <select className="vc-ei-select" aria-label="Channel for GIF files" value={storageChannel} onChange={e => settings.store.storageChannel = e.currentTarget.value}>
+                    <option value="">Pick a channel</option>
+                    {channels.map(channel => <option key={channel.id} value={channel.id}>#{channel.name}</option>)}
+                </select>
+            )}
+            <span className="vc-ei-note">Discord only stars GIFs that have a link. A GIF file you add is posted here silently, then its link is starred. Use a private channel.</span>
+        </div>
+    );
+}
+
 function Panel({ onReset }: { onReset(): void; }) {
-    const { columns, gap, hoverPlay, gifGuard, autoAnimate, scale, savedPlace, savedSend } = settings.use(["columns", "gap", "hoverPlay", "gifGuard", "autoAnimate", "scale", "savedPlace", "savedSend"]);
+    const { columns, gap, hoverPlay, gifGuard, autoAnimate, scale, savedPlace, savedSend, randomNames } = settings.use(["columns", "gap", "hoverPlay", "gifGuard", "autoAnimate", "scale", "savedPlace", "savedSend", "randomNames"]);
     return (
         <div className="vc-ei-panel" id="vc-ei-panel" role="tabpanel" aria-labelledby="vc-ei-tab">
             <div className="vc-ei-option">
@@ -706,6 +746,8 @@ function Panel({ onReset }: { onReset(): void; }) {
             <Option label="Size stickers and emojis to the picker" value={scale} onChange={on => settings.store.scale = on} />
             <Choices label="Downloaded emojis and stickers show in" value={savedPlace} options={PLACES} onChange={place => settings.store.savedPlace = place} />
             <Choices label="Send downloads you can't use as" value={savedSend} options={[["file", "File"], ["link", "Link"]]} onChange={how => settings.store.savedSend = how} />
+            <StorageChannel />
+            <Option label="Give uploaded and sent files a random name" value={randomNames} onChange={on => settings.store.randomNames = on} />
             <div className="vc-ei-option">
                 <span className="vc-ei-label">Picker size</span>
                 <button type="button" className="vc-ei-button" onClick={onReset}>Reset size</button>
@@ -732,41 +774,47 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
             if ((e.target as Element).matches?.('[class*="resizeHandle_"]')) freeze(drawer);
         };
         const accepts = (e: DragEvent) => !!e.dataTransfer && ["Files", "text/uri-list", "text/plain"].some(type => e.dataTransfer!.types.includes(type));
+        const inside = (e: DragEvent) => {
+            const rect = drawer.getBoundingClientRect();
+            return e.clientX >= rect.left && e.clientX < rect.right && e.clientY >= rect.top && e.clientY < rect.bottom;
+        };
         let dropTimer = 0;
+        const clearDrop = () => {
+            clearTimeout(dropTimer);
+            delete drawer.dataset.vcEiDrop;
+        };
         const over = (e: DragEvent) => {
             if (!accepts(e)) return;
+            if (!inside(e)) return clearDrop();
             e.preventDefault();
-            e.stopPropagation();
+            e.stopImmediatePropagation();
             e.dataTransfer!.dropEffect = "copy";
             drawer.dataset.vcEiDrop = DROP_TEXT[dropTarget(drawer)];
             clearTimeout(dropTimer);
-            dropTimer = window.setTimeout(() => delete drawer.dataset.vcEiDrop, 1000);
+            dropTimer = window.setTimeout(clearDrop, 1000);
         };
         const leave = (e: DragEvent) => {
-            if (!drawer.contains(e.relatedTarget as Node | null)) delete drawer.dataset.vcEiDrop;
+            if (!e.relatedTarget) clearDrop();
         };
         const drop = (e: DragEvent) => {
             if (!accepts(e)) return;
+            clearDrop();
+            if (!inside(e)) return;
             e.preventDefault();
-            e.stopPropagation();
-            delete drawer.dataset.vcEiDrop;
+            e.stopImmediatePropagation();
             handleDrop(dropTarget(drawer), e.dataTransfer!);
         };
+        const win = drawer.ownerDocument.defaultView ?? window;
+        const drags: [string, (e: DragEvent) => void][] = [["dragenter", over], ["dragover", over], ["dragleave", leave], ["drop", drop]];
         drawer.addEventListener("click", close);
         drawer.addEventListener("pointerover", onHover);
         drawer.addEventListener("mousedown", resize, true);
-        drawer.addEventListener("dragenter", over, true);
-        drawer.addEventListener("dragover", over, true);
-        drawer.addEventListener("dragleave", leave, true);
-        drawer.addEventListener("drop", drop, true);
+        drags.forEach(([type, listener]) => win.addEventListener(type, listener as EventListener, true));
         return () => {
             drawer.removeEventListener("click", close);
             drawer.removeEventListener("pointerover", onHover);
             drawer.removeEventListener("mousedown", resize, true);
-            drawer.removeEventListener("dragenter", over, true);
-            drawer.removeEventListener("dragover", over, true);
-            drawer.removeEventListener("dragleave", leave, true);
-            drawer.removeEventListener("drop", drop, true);
+            drags.forEach(([type, listener]) => win.removeEventListener(type, listener as EventListener, true));
             clearTimeout(dropTimer);
             hovered = null;
             setPanel("");

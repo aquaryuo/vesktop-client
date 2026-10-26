@@ -3,8 +3,10 @@ import * as DataStore from "@api/DataStore";
 import { plugins } from "@api/PluginManager";
 import { insertTextIntoChatInputBox, sendMessage } from "@utils/discord";
 import { chooseFile } from "@utils/web";
-import { findByCodeLazy } from "@webpack";
-import { ChannelStore, Constants, ContextMenuApi, EmojiStore, ExpressionPickerStore, FluxDispatcher, GuildStore, IconUtils, Menu, Modal, openModal, PermissionsBits, PermissionStore, React, RestAPI, SelectedChannelStore, showToast, StickersStore, UploadHandler, UserStore, useEffect, useMemo, useState } from "@webpack/common";
+import { CloudUpload as TCloudUpload } from "@vencord/discord-types";
+import { CloudUploadPlatform } from "@vencord/discord-types/enums";
+import { findByCodeLazy, findLazy } from "@webpack";
+import { ChannelStore, Constants, ContextMenuApi, EmojiStore, ExpressionPickerStore, FluxDispatcher, GuildStore, IconUtils, Menu, Modal, openModal, PermissionsBits, PermissionStore, React, RestAPI, SelectedChannelStore, showToast, SnowflakeUtils, StickersStore, UploadHandler, UserStore, useEffect, useMemo, useState } from "@webpack/common";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
 import { addGifFavorite, isGifFavorite, removeGifFavorite, settings } from ".";
@@ -47,7 +49,10 @@ const EMOJI_NAME = /^\w{2,32}$/;
 const PLUS = "M12 5v14M5 12h14";
 const CLONER_ID = "emote-cloner";
 
+const SILENT = 1 << 12;
+
 const uploadEmoji = findByCodeLazy(".GUILD_EMOJIS(", "EMOJI_UPLOAD_START");
+const CloudUpload: typeof TCloudUpload = findLazy(m => m.prototype?.trackUploadFinished);
 
 let items: SavedItem[] = [];
 let loaded: Promise<void> | undefined;
@@ -157,18 +162,61 @@ async function saveGif({ link, file }: { link?: string; file?: File; }) {
     return "Saved to Downloads.";
 }
 
-export async function addGifLink(link: string) {
-    const [star, copy] = await Promise.allSettled([addGifFavorite(link), saveGif({ link })]);
+function randomName() {
+    return Array.from(crypto.getRandomValues(new Uint8Array(6)), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function extension(name: string, type: string) {
+    return name.match(/\.\w{2,5}$/)?.[0].toLowerCase() ?? `.${type.split("/")[1]?.replace("jpeg", "jpg") || "png"}`;
+}
+
+async function postGif(file: File) {
+    const channel = ChannelStore.getChannel(settings.store.storageChannel);
+    if (!channel) throw new Error("Pick a channel for GIF files in the picker settings to star them.");
+    const name = `${settings.store.randomNames ? randomName() : nameFrom(file.name) || "gif"}${extension(file.name, file.type)}`;
+    const upload = new CloudUpload({ file: new File([file], name, { type: file.type }), isThumbnail: false, platform: CloudUploadPlatform.WEB }, channel.id);
+    await new Promise<void>((resolve, reject) => {
+        upload.on("complete", () => resolve());
+        upload.on("error", () => reject(new Error("The upload failed.")));
+        upload.upload();
+    });
+    const res = await RestAPI.post({
+        url: Constants.Endpoints.MESSAGES(channel.id),
+        body: {
+            flags: SILENT,
+            channel_id: channel.id,
+            content: "",
+            nonce: SnowflakeUtils.fromTimestamp(Date.now()),
+            sticker_ids: [],
+            type: 0,
+            attachments: [{ id: "0", filename: upload.filename, uploaded_filename: upload.uploadedFilename }]
+        }
+    }).catch(e => { throw new Error(apiMessage(e)); });
+    const link: string | undefined = res.body?.attachments?.[0]?.url;
+    if (!link) throw new Error("Discord didn't return a link for it.");
+    return link;
+}
+
+export async function addGifLink(link: string, file?: File) {
+    const [star, copy] = await Promise.allSettled([addGifFavorite(link), saveGif({ link, file })]);
     const starred = star.status === "fulfilled" ? star.value : "Couldn't star it.";
     const saved = copy.status === "fulfilled" ? copy.value : `No copy in Downloads: ${(copy.reason as Error)?.message ?? "the download failed."}`;
     return `${starred} ${saved}`;
 }
 
 export async function addGifFile(file: File) {
+    if (!GIF_TYPES.test(file.type)) return "That isn't a GIF or a video.";
+    if (file.size > MAX_GIF_FILE) return "That file is over 10 MB.";
+    if (!settings.store.storageChannel) {
+        const saved = await saveGif({ file }).catch((e: Error) => e.message);
+        return `${saved} To star GIF files, pick a channel for them in the picker settings.`;
+    }
+    showToast({ text: "Posting the GIF so it can be starred..." });
     try {
-        return `${await saveGif({ file })} Discord only stars GIFs that have a link, so send it and star the sent GIF.`;
+        return await addGifLink(await postGif(file), file);
     } catch (e: any) {
-        return e?.message ?? "Couldn't save that file.";
+        const saved = await saveGif({ file }).catch((err: Error) => err.message);
+        return `${e?.message ?? "Couldn't post it."} ${saved}`;
     }
 }
 
@@ -193,8 +241,8 @@ function linkFor(item: SavedItem) {
 }
 
 function fileName(item: SavedItem, blob: Blob) {
-    const ext = blob.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
-    return `${item.name.replace(/[^\w-]+/g, "_") || item.kind}.${ext}`;
+    const base = settings.store.randomNames ? randomName() : item.name.replace(/[^\w-]+/g, "_") || item.kind;
+    return `${base}${extension("", blob.type)}`;
 }
 
 export async function sendSaved(item: SavedItem, how?: "file" | "link") {

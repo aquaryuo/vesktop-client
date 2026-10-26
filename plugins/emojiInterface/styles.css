@@ -1652,3 +1652,11 @@
 .vc-ei-strip .vc-ei-saved-remove {
     display: none;
 }
+
+.vc-ei-note {
+    flex: 1 1 100%;
+    color: var(--q-t2);
+    opacity: 0.8;
+    font-size: 12px;
+    line-height: 1.45;
+}
