@@ -53,7 +53,12 @@ const settings = definePluginSettings({
     },
     hoverPlay: {
         type: OptionType.BOOLEAN,
-        description: "Animate GIFs, stickers and emojis in the picker only while you hover them",
+        description: "Play GIFs in the picker only while you hover them",
+        default: true
+    },
+    autoAnimate: {
+        type: OptionType.BOOLEAN,
+        description: "Play animated emojis and stickers in the picker automatically. Off plays them only while you hover them",
         default: true
     },
     scale: {
@@ -310,8 +315,27 @@ function Transfer() {
     );
 }
 
-function fit(section: HTMLElement, height: number) {
-    return Math.round(Math.max(MIN_HEIGHT, Math.min(height, section.getBoundingClientRect().bottom - 8, innerHeight - 16)));
+function fit(section: HTMLElement, height: number, bottom = section.getBoundingClientRect().bottom) {
+    return Math.round(Math.max(MIN_HEIGHT, Math.min(height, bottom - 8, innerHeight - 16)));
+}
+
+function freeze(drawer: HTMLElement) {
+    if (drawer.classList.contains("vc-ei-resizing")) return;
+    const content = [...drawer.querySelector(':scope > [class*="contentWrapper_"]')?.children ?? []].find(el => el.tagName !== "NAV");
+    if (!content) return;
+    const { width, height } = content.getBoundingClientRect();
+    drawer.style.setProperty("--vc-ei-frozen-w", `${width}px`);
+    drawer.style.setProperty("--vc-ei-frozen-h", `${height}px`);
+    drawer.classList.add("vc-ei-resizing");
+    const done = () => {
+        document.removeEventListener("mouseup", done, true);
+        drawer.classList.remove("vc-ei-resizing");
+        drawer.style.removeProperty("--vc-ei-frozen-w");
+        drawer.style.removeProperty("--vc-ei-frozen-h");
+        zoom(drawer);
+        nudge();
+    };
+    document.addEventListener("mouseup", done, true);
 }
 
 const grids = new Set<{ forceUpdate(): void; }>();
@@ -323,6 +347,7 @@ function nudge() {
 }
 
 function zoom(drawer: HTMLElement) {
+    if (drawer.classList.contains("vc-ei-resizing")) return;
     const value = settings.store.scale ? String(Math.min(MAX_ZOOM, Math.max(1, drawer.offsetWidth / BASE_WIDTH))) : "";
     if (drawer.style.getPropertyValue("--vc-ei-zoom") === value) return;
     if (value) drawer.style.setProperty("--vc-ei-zoom", value);
@@ -402,7 +427,7 @@ function StartView() {
 }
 
 function Panel({ onReset }: { onReset(): void; }) {
-    const { columns, hoverPlay, scale } = settings.use(["columns", "hoverPlay", "scale"]);
+    const { columns, hoverPlay, autoAnimate, scale } = settings.use(["columns", "hoverPlay", "autoAnimate", "scale"]);
     return (
         <div className="vc-ei-panel" id="vc-ei-panel" role="tabpanel" aria-labelledby="vc-ei-tab">
             <div className="vc-ei-option">
@@ -414,7 +439,8 @@ function Panel({ onReset }: { onReset(): void; }) {
                 </div>
             </div>
             <StartView />
-            <Option label="Animate only on hover" value={hoverPlay} onChange={setHoverPlay} />
+            <Option label="Play GIFs only on hover" value={hoverPlay} onChange={setHoverPlay} />
+            <Option label="Play emojis and stickers automatically" value={autoAnimate} onChange={on => settings.store.autoAnimate = on} />
             <Option label="Size stickers and emojis to the picker" value={scale} onChange={on => settings.store.scale = on} />
             <div className="vc-ei-option">
                 <span className="vc-ei-label">Picker size</span>
@@ -438,11 +464,16 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
             const tab = (e.target as Element).closest?.('[role="tab"]');
             if (tab && tab.id !== "vc-ei-tab") setPanel(false);
         };
+        const resize = (e: MouseEvent) => {
+            if ((e.target as Element).matches?.('[class*="resizeHandle_"]')) freeze(drawer);
+        };
         drawer.addEventListener("click", close);
         drawer.addEventListener("pointerover", onHover);
+        drawer.addEventListener("mousedown", resize, true);
         return () => {
             drawer.removeEventListener("click", close);
             drawer.removeEventListener("pointerover", onHover);
+            drawer.removeEventListener("mousedown", resize, true);
             hovered = null;
             setPanel(false);
         };
@@ -463,14 +494,25 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
     }, [scale]);
 
     function drag(e: ReactMouseEvent) {
-        const el = section();
-        if (!el) return;
+        const el = section(), drawer = ref.current?.parentElement;
+        if (!el || !drawer) return;
         e.preventDefault();
-        const startY = e.clientY, start = el.offsetHeight;
-        const move = (ev: MouseEvent) => el.style.height = `${fit(el, start + startY - ev.clientY)}px`;
+        freeze(drawer);
+        const startY = e.clientY, start = el.offsetHeight, { bottom } = el.getBoundingClientRect();
+        let y = startY, frame = 0;
+        const apply = () => {
+            frame = 0;
+            el.style.height = `${fit(el, start + startY - y, bottom)}px`;
+        };
+        const move = (ev: MouseEvent) => {
+            y = ev.clientY;
+            frame ||= requestAnimationFrame(apply);
+        };
         const up = () => {
             removeEventListener("mousemove", move);
             removeEventListener("mouseup", up);
+            cancelAnimationFrame(frame);
+            apply();
             settings.store.height = el.offsetHeight;
         };
         addEventListener("mousemove", move);
@@ -562,8 +604,12 @@ export default definePlugin({
                     replace: "$&$self.renderTab(),"
                 },
                 {
-                    match: /preferAnimation:(\i)<=(\i),/,
-                    replace: "preferAnimation:!$self.settings.store.hoverPlay&&$1<=$2,"
+                    match: /preferAnimation:\i<=\i,/,
+                    replace: "preferAnimation:$self.settings.store.autoAnimate,"
+                },
+                {
+                    match: /onElementResize:(\i),orientation:/,
+                    replace: "onElementResizeEnd:$1,orientation:"
                 }
             ]
         },
@@ -660,7 +706,7 @@ export default definePlugin({
     },
 
     animate(allowed: boolean, inspected: boolean) {
-        return allowed && (inspected || !settings.store.hoverPlay);
+        return allowed && (inspected || settings.store.autoAnimate);
     },
 
     isStart(type: string) {

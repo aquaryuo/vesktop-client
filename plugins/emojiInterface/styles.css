@@ -820,3 +820,23 @@
         border-inline-start: 3px solid Highlight;
     }
 }
+
+.vc-ei,
+.vc-ei-emojis:not(.vc-ei .vc-ei-emojis) {
+    contain: layout style;
+}
+
+.vc-ei.vc-ei-resizing > [class*="contentWrapper_"] {
+    overflow: clip;
+}
+
+.vc-ei.vc-ei-resizing > [class*="contentWrapper_"] > :not(nav) {
+    width: var(--vc-ei-frozen-w);
+    height: var(--vc-ei-frozen-h);
+    contain: strict;
+    pointer-events: none;
+}
+
+.vc-ei [class*="result_"][class*="result_"] {
+    content-visibility: auto;
+}
