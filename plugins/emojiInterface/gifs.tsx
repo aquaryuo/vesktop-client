@@ -314,8 +314,8 @@ export function GifTools() {
                 {!editing && <button type="button" className="vc-ei-choice" aria-pressed={!filter} onClick={() => { filter = ""; refresh(); }}>All</button>}
                 {tags.map(tag => <TagChip key={tag.id} tag={tag} />)}
                 {editing && <NewTag />}
+                <button type="button" className="vc-ei-choice vc-ei-edit" aria-pressed={editing} onClick={() => { editing = !editing; brush = []; disarm(); refresh(); }}>{editing ? "Done" : "Edit"}</button>
             </div>
-            <button type="button" className="vc-ei-choice vc-ei-edit" aria-pressed={editing} onClick={() => { editing = !editing; brush = []; disarm(); refresh(); }}>{editing ? "Done" : "Edit"}</button>
             {editing && <p className="vc-ei-hint" role="status">{brushName ? `Click GIFs to add or remove ${brushName}.` : "Pick one or more tags, then click GIFs to tag them."}</p>}
         </div>
     );

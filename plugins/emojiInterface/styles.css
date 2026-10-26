@@ -1173,35 +1173,45 @@
 
 .vc-ei-chips {
     display: flex;
-    flex: 1 1 auto;
+    flex: 1 1 100%;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 6px 8px;
     min-width: 0;
-    padding-left: 6px;
+    padding-inline: 6px;
 }
 
-.vc-ei-chips .vc-ei-choice,
-.vc-ei-edit {
+.vc-ei-chips > * {
+    flex: 1 0 auto;
+}
+
+.vc-ei-chips .vc-ei-choice {
     height: 28px;
     padding: 0 12px;
 }
 
-.vc-ei-edit {
-    flex: none;
+.vc-ei-chips > .vc-ei-edit {
+    flex-grow: 0.5;
+    min-width: 64px;
 }
 
 .vc-ei-tag {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: 6px;
+    min-width: 200px;
 }
 
 .vc-ei-tag-input {
-    width: 128px;
+    flex: 1;
+    min-width: 96px;
     height: 28px;
     padding: 0 8px;
     font-size: 13px;
+}
+
+.vc-ei-tag > .vc-ei-choice {
+    flex: none;
 }
 
 .vc-ei-hint {
