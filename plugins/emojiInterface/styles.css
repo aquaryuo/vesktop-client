@@ -1150,3 +1150,86 @@
 .vc-ei-emojis:not(.vc-ei .vc-ei-emojis) .vc-ei-strip {
     display: none;
 }
+
+:is(.vc-ei, .vc-ei-emojis) :has(> .vc-ei-plus) {
+    gap: var(--space-12, 12px);
+}
+
+@keyframes vc-ei-shimmer {
+    from {
+        translate: -100% 0;
+    }
+
+    to {
+        translate: 100% 0;
+    }
+}
+
+@keyframes vc-ei-sweep {
+    from {
+        background-position: 100% 0;
+    }
+
+    to {
+        background-position: 0 0;
+    }
+}
+
+.vc-ei :is([class*="emojiItem_"], [data-type="sticker"], [class*="categoryItemGuildCategory_"], .vc-ei-saved-item):has(img:not([data-vc-ei-loaded])),
+.vc-ei [class*="result_"][class*="result_"][style*="background-color"],
+.vc-ei [class*="placeholder_"],
+.vc-ei [class*="categoryLoader_"],
+.vc-ei [class*="column_"] > [class*="gif_"],
+.vc-ei-saved-blank {
+    position: relative;
+    isolation: isolate;
+    overflow: clip;
+    border-radius: 0;
+    background-color: var(--q-fill-soft) !important;
+}
+
+.vc-ei :is([class*="emojiItem_"], [data-type="sticker"], [class*="categoryItemGuildCategory_"], .vc-ei-saved-item):has(img:not([data-vc-ei-loaded]))::before,
+.vc-ei [class*="result_"][class*="result_"][style*="background-color"]::before,
+.vc-ei [class*="placeholder_"]::before,
+.vc-ei [class*="categoryLoader_"]::before,
+.vc-ei [class*="column_"] > [class*="gif_"]::before,
+.vc-ei-saved-blank::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--q-accent) 16%, transparent) 50%, transparent 80%);
+    translate: -100% 0;
+    pointer-events: none;
+}
+
+.full-motion .vc-ei :is([class*="emojiItem_"], [data-type="sticker"], [class*="categoryItemGuildCategory_"], .vc-ei-saved-item):has(img:not([data-vc-ei-loaded]))::before,
+.full-motion .vc-ei [class*="result_"][class*="result_"][style*="background-color"]::before,
+.full-motion .vc-ei [class*="placeholder_"]::before,
+.full-motion .vc-ei [class*="categoryLoader_"]::before,
+.full-motion .vc-ei [class*="column_"] > [class*="gif_"]::before,
+.full-motion .vc-ei-saved-blank::before {
+    animation: vc-ei-shimmer 1.3s var(--q-ease) infinite;
+}
+
+.vc-ei-saved-blank {
+    display: block;
+}
+
+.vc-ei [class*="loadingIndicator_"] {
+    box-sizing: border-box;
+    padding: 16px;
+    background: linear-gradient(100deg, var(--q-fill-soft) 35%, color-mix(in srgb, var(--q-accent) 14%, transparent) 50%, var(--q-fill-soft) 65%) 0 0 / 300% 100%;
+    mask-image: repeating-linear-gradient(90deg, #000 0 64px, transparent 64px 72px), repeating-linear-gradient(#000 0 64px, transparent 64px 72px);
+    mask-composite: intersect;
+    mask-clip: content-box;
+    mask-origin: content-box;
+}
+
+.vc-ei [class*="loadingIndicator_"] > * {
+    visibility: hidden;
+}
+
+.full-motion .vc-ei [class*="loadingIndicator_"] {
+    animation: vc-ei-sweep 1.6s linear infinite;
+}

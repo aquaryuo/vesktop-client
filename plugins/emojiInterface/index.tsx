@@ -531,7 +531,15 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
         drawer.addEventListener("click", close);
         drawer.addEventListener("pointerover", onHover);
         drawer.addEventListener("mousedown", resize, true);
+        markComplete(drawer);
+        const added = new MutationObserver(records => {
+            for (const record of records)
+                for (const node of record.addedNodes)
+                    if (node instanceof Element) markComplete(node);
+        });
+        added.observe(drawer, { childList: true, subtree: true });
         return () => {
+            added.disconnect();
             drawer.removeEventListener("click", close);
             drawer.removeEventListener("pointerover", onHover);
             drawer.removeEventListener("mousedown", resize, true);
@@ -629,6 +637,16 @@ function GifImage(props: ImgHTMLAttributes<HTMLImageElement>) {
             <canvas ref={canvas} className={classes(props.className, "vc-ei-still", ready && "vc-ei-ready")} style={{ height: props.height }} />
         </>
     );
+}
+
+function markLoaded(e: Event) {
+    const img = e.target;
+    if (img instanceof HTMLImageElement && img.closest(".vc-ei")) img.dataset.vcEiLoaded = "";
+}
+
+function markComplete(root: Element) {
+    for (const img of root instanceof HTMLImageElement ? [root] : root.querySelectorAll("img"))
+        if (img.complete) img.dataset.vcEiLoaded = "";
 }
 
 let hovered: HTMLVideoElement | null = null;
@@ -768,6 +786,8 @@ export default definePlugin({
         link.rel = "stylesheet";
         link.href = FONT_URL;
         document.head.append(link);
+        document.addEventListener("load", markLoaded, true);
+        document.addEventListener("error", markLoaded, true);
         if (settings.store.defaultsVersion < 1) {
             settings.store.columns = 3;
             settings.store.hoverPlay = false;
@@ -777,6 +797,8 @@ export default definePlugin({
 
     stop() {
         document.getElementById("vc-ei-font")?.remove();
+        document.removeEventListener("load", markLoaded, true);
+        document.removeEventListener("error", markLoaded, true);
         clearTimeout(nudgeTimer);
         restoreCloner();
         revokeUrls();
