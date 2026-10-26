@@ -834,6 +834,10 @@ export default definePlugin({
                     replace: "$&$self.renderTab(),"
                 },
                 {
+                    match: /(spacing:8,autoInvert:!0,clickTrap:)!0/,
+                    replace: "$1!1"
+                },
+                {
                     match: /(\i)\.addEventListener\("mousedown",(\i)\),\1\.addEventListener\("contextmenu",\2\)/,
                     replace: '$1.addEventListener("mousedown",$self.outside($2)),$1.addEventListener("contextmenu",$self.outside($2))'
                 },
