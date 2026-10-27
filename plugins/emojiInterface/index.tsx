@@ -139,6 +139,16 @@ export const settings = definePluginSettings({
     }
 });
 
+export function useParentClass<T extends HTMLElement>(className: string, active = true) {
+    const ref = useRef<T>(null);
+    useLayoutEffect(() => {
+        const parent = active ? ref.current?.parentElement : null;
+        parent?.classList.add(className);
+        return () => parent?.classList.remove(className);
+    }, [active]);
+    return ref;
+}
+
 let styleUsers = 0;
 
 export function useStyle() {
@@ -781,6 +791,10 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
     const view = usePanel();
     const { scale } = settings.use(["scale"]);
     const section = () => ref.current?.closest("section");
+
+    useLayoutEffect(() => {
+        ref.current?.parentElement?.toggleAttribute("data-vc-ei-panel", !!view);
+    }, [view]);
 
     useEffect(() => {
         const drawer = ref.current?.parentElement;

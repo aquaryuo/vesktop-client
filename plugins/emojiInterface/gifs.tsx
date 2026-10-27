@@ -1,8 +1,8 @@
 import * as DataStore from "@api/DataStore";
-import { ContextMenuApi, Menu, React, useEffect, useState } from "@webpack/common";
+import { ContextMenuApi, Menu, React, useEffect, useLayoutEffect, useState } from "@webpack/common";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
-import { settings } from ".";
+import { settings, useParentClass } from ".";
 
 interface Tag {
     id: string;
@@ -318,13 +318,19 @@ function NewTag() {
 
 export function GifTools({ count }: { count: number; }) {
     useTags();
+    const ref = useParentClass<HTMLDivElement>("vc-ei-gifhead");
+    useLayoutEffect(() => {
+        const drawer = ref.current?.closest(".vc-ei");
+        drawer?.toggleAttribute("data-vc-ei-editing", editing);
+        return () => drawer?.removeAttribute("data-vc-ei-editing");
+    }, [editing]);
     const tags = allTags();
     const names = tags.filter(tag => brush.includes(tag.id)).map(tag => tag.name);
     const brushName = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
     const scopeName = scope && tags.find(tag => tag.id === filter)?.name;
     const hint = brushName ? `Click GIFs to add or remove ${brushName}.` : "Pick one or more tags, then click GIFs to tag them.";
     return (
-        <div className="vc-ei-giftools" data-vc-ei-editing={editing || undefined}>
+        <div className="vc-ei-giftools" ref={ref} data-vc-ei-editing={editing || undefined}>
             <div className="vc-ei-chips" role="group" aria-label={editing ? "Tags to apply, pick one or more" : "Filter favorites by tag"}>
                 {!editing && <button type="button" className="vc-ei-choice" aria-pressed={!filter} aria-label={`All, ${count} favorite GIFs`} onClick={() => { filter = ""; refresh(); }}>All<span className="vc-ei-count">{count}</span></button>}
                 {tags.map(tag => <TagChip key={tag.id} tag={tag} />)}

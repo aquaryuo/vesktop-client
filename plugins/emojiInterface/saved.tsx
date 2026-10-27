@@ -9,7 +9,7 @@ import { findByCodeLazy, findLazy } from "@webpack";
 import { ChannelStore, Constants, ContextMenuApi, EmojiStore, ExpressionPickerStore, FluxDispatcher, GuildStore, IconUtils, Menu, Modal, openModal, PermissionsBits, PermissionStore, React, RestAPI, SelectedChannelStore, showToast, SnowflakeUtils, StickersStore, UploadHandler, UserStore, useEffect, useMemo, useState } from "@webpack/common";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
-import { addGifFavorite, isGifFavorite, removeGifFavorite, settings, useStyle } from ".";
+import { addGifFavorite, isGifFavorite, removeGifFavorite, settings, useParentClass, useStyle } from ".";
 
 export type Kind = "emoji" | "sticker";
 export type ItemKind = Kind | "gif";
@@ -315,7 +315,7 @@ function SavedGrid({ list }: { list: SavedItem[]; }) {
         sendSaved(item);
     }
     return (
-        <div className="vc-ei-saved-grid">
+        <div className="vc-ei-saved-grid" data-kind={list[0]?.kind}>
             {list.map(item => (
                 <div key={item.key} className={`vc-ei-saved-cell vc-ei-saved-${item.kind}`} data-vc-ei-armed={armed === item.key || undefined}>
                     <button type="button" className="vc-ei-saved-item" title={item.name} aria-label={item.name} onClick={() => pick(item)} onContextMenu={e => openItemMenu(e, item)}>
@@ -352,9 +352,10 @@ export function SavedStrip({ kind }: { kind: Kind; }) {
     useStyle();
     const { savedPlace } = settings.use(["savedPlace"]);
     const list = useSaved().filter(item => item.kind === kind);
+    const ref = useParentClass<HTMLDivElement>("vc-ei-strip-host", savedPlace !== "tab" && list.length > 0);
     if (savedPlace === "tab" || !list.length) return null;
     return (
-        <div className="vc-ei-strip">
+        <div className="vc-ei-strip" ref={ref}>
             <span className="vc-ei-heading">Downloads</span>
             <div className="vc-ei-strip-row" onWheel={e => { e.currentTarget.scrollLeft += e.deltaY; }}>
                 <SavedGrid list={list} />
@@ -590,6 +591,7 @@ async function openGifFile() {
 }
 
 export function PlusButton({ kind, onUpload, uploadDisabled }: { kind: ItemKind | "all"; onUpload?(): void; uploadDisabled?: boolean; }) {
+    const ref = useParentClass<HTMLButtonElement>("vc-ei-plus-host");
     const label = kind === "emoji" ? "Add emoji" : kind === "sticker" ? "Add sticker" : kind === "gif" ? "Add GIF" : "Add to Downloads";
     const gifItems = [
         <Menu.MenuItem key="gif-file" id="vc-ei-gif-file" label="Add a GIF from a file" action={openGifFile} />,
@@ -608,7 +610,7 @@ export function PlusButton({ kind, onUpload, uploadDisabled }: { kind: ItemKind 
             <Menu.MenuItem key="link" id="vc-ei-save-link" label={`Save ${kind === "emoji" ? "an emoji" : "a sticker"} from a link`} action={() => openSave(kind, "link")} />
         ].filter(Boolean);
     return (
-        <button type="button" className="vc-ei-plus" aria-label={label} title={label} onClick={e => ContextMenuApi.openContextMenu(e, () => (
+        <button type="button" className="vc-ei-plus" ref={ref} aria-label={label} title={label} onClick={e => ContextMenuApi.openContextMenu(e, () => (
             <Menu.Menu navId="vc-ei-add" onClose={ContextMenuApi.closeContextMenu} aria-label={label}>
                 {entries}
             </Menu.Menu>
