@@ -2,3 +2,7 @@
     z-index: auto !important;
     pointer-events: none !important;
 }
+
+[data-vc-ots-covered] {
+    content-visibility: hidden !important;
+}

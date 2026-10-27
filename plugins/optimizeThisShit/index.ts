@@ -1,6 +1,51 @@
-import definePlugin from "@utils/types";
+import { definePluginSettings } from "@api/Settings";
+import definePlugin, { OptionType } from "@utils/types";
 
 import managedStyle from "./styles.css?managed";
+
+const settings = definePluginSettings({
+    plainBackdrop: {
+        type: OptionType.BOOLEAN,
+        description: "Stop drawing the app behind Settings, the image viewer and other dimmed windows. Scrolling them gets smoother, but the dimmed app around the window turns into a plain dark backdrop",
+        default: false,
+        onChange: () => updateBackdrop()
+    }
+});
+
+const PANEL = '[class*="notAppAsidePanel_"]';
+const CONTAINER = `${PANEL} > [class*="layerContainer_"]`;
+const COVERED = "data-vc-ots-covered";
+const watched = new WeakSet<Element>();
+let layerObserver: MutationObserver | undefined;
+let findTimer: ReturnType<typeof setInterval> | undefined;
+
+function updateBackdrop() {
+    const cover = settings.store.plainBackdrop && !!document.querySelector(`${CONTAINER} [class*="scrim_"]`);
+    const base = document.querySelector('[class*="baseLayer_"]');
+    document.querySelectorAll(`[${COVERED}]`).forEach(el => el !== base && el.removeAttribute(COVERED));
+    base?.toggleAttribute(COVERED, cover);
+}
+
+function watchLayers() {
+    const panels = document.querySelectorAll(PANEL);
+    if (!panels.length) return false;
+    layerObserver ??= new MutationObserver(records => {
+        if (records.some(r => (r.target as Element).matches?.(PANEL))) watchLayers();
+        updateBackdrop();
+    });
+    for (const panel of panels) {
+        if (!watched.has(panel)) {
+            watched.add(panel);
+            layerObserver.observe(panel, { childList: true });
+        }
+        for (const container of panel.querySelectorAll(':scope > [class*="layerContainer_"]')) {
+            if (watched.has(container)) continue;
+            watched.add(container);
+            layerObserver.observe(container, { childList: true, subtree: true });
+        }
+    }
+    return true;
+}
 
 const DEBUG = /\.highlight-mana-/;
 const FLAT_3D = /translateZ\(\s*0(px)?\s*\)|translate3d\(\s*[^,()]+,\s*[^,()]+,\s*0(px)?\s*\)/;
@@ -98,16 +143,23 @@ export default definePlugin({
     authors: [{ name: "aquaryuo", id: 975151124824879125n }],
     enabledByDefault: true,
     managedStyle,
+    settings,
 
     start() {
         for (const sheet of document.styleSheets) clean(sheet);
         observer = new MutationObserver(records => records.forEach(record => record.addedNodes.forEach(cleanNode)));
         observer.observe(document.head, { childList: true });
+        if (!watchLayers()) findTimer = setInterval(() => watchLayers() && clearInterval(findTimer), 1000);
+        updateBackdrop();
     },
 
     stop() {
         observer?.disconnect();
         observer = undefined;
+        clearInterval(findTimer);
+        layerObserver?.disconnect();
+        layerObserver = undefined;
+        document.querySelectorAll(`[${COVERED}]`).forEach(el => el.removeAttribute(COVERED));
         for (const change of changes.splice(0).reverse()) {
             try {
                 change.restore();
