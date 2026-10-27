@@ -9,7 +9,7 @@ import { findByCodeLazy, findLazy } from "@webpack";
 import { ChannelStore, Constants, ContextMenuApi, EmojiStore, ExpressionPickerStore, FluxDispatcher, GuildStore, IconUtils, Menu, Modal, openModal, PermissionsBits, PermissionStore, React, RestAPI, SelectedChannelStore, showToast, SnowflakeUtils, StickersStore, UploadHandler, UserStore, useEffect, useMemo, useState } from "@webpack/common";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
-import { addGifFavorite, isGifFavorite, removeGifFavorite, settings } from ".";
+import { addGifFavorite, isGifFavorite, removeGifFavorite, settings, useStyle } from ".";
 
 export type Kind = "emoji" | "sticker";
 export type ItemKind = Kind | "gif";
@@ -349,6 +349,7 @@ export function SavedPanel() {
 }
 
 export function SavedStrip({ kind }: { kind: Kind; }) {
+    useStyle();
     const { savedPlace } = settings.use(["savedPlace"]);
     const list = useSaved().filter(item => item.kind === kind);
     if (savedPlace === "tab" || !list.length) return null;
@@ -410,6 +411,7 @@ function Preview({ source }: { source: Source; }) {
 }
 
 function CloneModal({ source }: { source: Source; }) {
+    useStyle();
     const [name, setName] = useState(source.kind === "emoji" ? source.name.split("~")[0].replace(/\W/g, "_") : source.name);
     const [busy, setBusy] = useState("");
     const [status, setStatus] = useState("");
@@ -464,6 +466,7 @@ function nameFrom(text: string) {
 }
 
 function SaveModal({ kind: initial, from, file, link: initialLink = "", onClose }: { kind: Kind; from: "file" | "link"; file?: File; link?: string; onClose(): void; }) {
+    useStyle();
     const [kind, setKind] = useState<Kind>(initial);
     const [name, setName] = useState(file ? nameFrom(file.name) : initialLink ? nameFrom(initialLink) : "");
     const [link, setLink] = useState(initialLink);
@@ -546,6 +549,7 @@ async function uploadFile(kind: Kind) {
 }
 
 function GifLinkModal({ onClose }: { onClose(): void; }) {
+    useStyle();
     const [link, setLink] = useState("");
     const [status, setStatus] = useState("");
     const [busy, setBusy] = useState(false);

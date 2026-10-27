@@ -1,4 +1,5 @@
 import { definePluginSettings } from "@api/Settings";
+import { disableStyle, enableStyle } from "@api/Styles";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { classes } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
@@ -137,6 +138,17 @@ export const settings = definePluginSettings({
         component: () => <Transfer />
     }
 });
+
+let styleUsers = 0;
+
+export function useStyle() {
+    useLayoutEffect(() => {
+        if (!styleUsers++) enableStyle(managedStyle);
+        return () => {
+            if (!--styleUsers) disableStyle(managedStyle);
+        };
+    }, []);
+}
 
 const frecency = () => UserSettingsActionCreators.FrecencyUserSettingsActionCreators;
 const GIFPickerViewStore = findStoreLazy("GIFPickerViewStore");
@@ -450,6 +462,7 @@ async function importFavorites() {
 }
 
 function Transfer() {
+    useStyle();
     const [status, setStatus] = useState("");
     const [broken, setBroken] = useState<string[]>([]);
     const [checking, setChecking] = useState(false);
@@ -763,6 +776,7 @@ function Panel({ onReset }: { onReset(): void; }) {
 }
 
 function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; side: string; }) {
+    useStyle();
     const ref = useRef<HTMLDivElement>(null);
     const view = usePanel();
     const { scale } = settings.use(["scale"]);
@@ -932,7 +946,6 @@ export default definePlugin({
     name: "Emoji Interface",
     description: "Restyles the emoji, GIF and sticker picker, lets you resize it from its top edge and corner, sets GIF columns and hover playback, and moves favorites between accounts",
     authors: [{ name: "aquaryuo", id: 975151124824879125n }],
-    managedStyle,
     settings,
 
     contextMenus: {
@@ -1152,6 +1165,8 @@ export default definePlugin({
     },
 
     stop() {
+        styleUsers = 0;
+        disableStyle(managedStyle);
         document.getElementById("vc-ei-font")?.remove();
         window.removeEventListener("keydown", trackInput, true);
         window.removeEventListener("pointerdown", trackInput, true);
