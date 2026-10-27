@@ -1,6 +1,10 @@
 import definePlugin from "@utils/types";
 
+import managedStyle from "./styles.css?managed";
+
 const DEBUG = /\.highlight-mana-/;
+const FLAT_3D = /translateZ\(\s*0(px)?\s*\)|translate3d\(\s*[^,()]+,\s*[^,()]+,\s*0(px)?\s*\)/;
+const REAL_3D = /perspective|preserve-3d|backface/;
 
 type RuleParent = CSSStyleSheet | CSSGroupingRule;
 
@@ -33,6 +37,33 @@ function removeAt(parent: RuleParent, index: number) {
     changes.push({ restore: () => parent.insertRule(text, Math.min(index, parent.cssRules.length)) });
 }
 
+function stripDebug(parent: RuleParent, index: number, rule: CSSStyleRule) {
+    const selectors = splitSelectors(rule.selectorText);
+    const kept = selectors.filter(s => !DEBUG.test(s));
+    if (kept.length === selectors.length) return false;
+    if (!kept.length) {
+        removeAt(parent, index);
+        return true;
+    }
+    const original = rule.selectorText;
+    rule.selectorText = kept.join(", ");
+    changes.push({ restore: () => { rule.selectorText = original; } });
+    return false;
+}
+
+function flatten(rule: CSSStyleRule) {
+    const { style } = rule;
+    const transform = style.transform;
+    if (!transform || !FLAT_3D.test(transform) || REAL_3D.test(style.cssText)) return;
+    const flat = transform
+        .replace(/translateZ\(\s*0(px)?\s*\)/g, "translate(0px)")
+        .replace(/translate3d\(\s*([^,()]+),\s*([^,()]+),\s*0(px)?\s*\)/g, "translate($1, $2)");
+    const priority = style.getPropertyPriority("transform");
+    style.setProperty("transform", flat, priority);
+    if (style.transform === transform) return;
+    changes.push({ restore: () => style.setProperty("transform", transform, priority) });
+}
+
 function clean(parent: RuleParent) {
     let rules: CSSRuleList;
     try {
@@ -43,16 +74,7 @@ function clean(parent: RuleParent) {
     for (let i = rules.length - 1; i >= 0; i--) {
         const rule = rules[i];
         if (rule instanceof CSSStyleRule) {
-            const selectors = splitSelectors(rule.selectorText);
-            const kept = selectors.filter(s => !DEBUG.test(s));
-            if (kept.length === selectors.length) continue;
-            if (!kept.length) {
-                removeAt(parent, i);
-                continue;
-            }
-            const original = rule.selectorText;
-            rule.selectorText = kept.join(", ");
-            changes.push({ restore: () => { rule.selectorText = original; } });
+            if (!stripDebug(parent, i, rule)) flatten(rule);
         } else if (typeof CSSScopeRule !== "undefined" && rule instanceof CSSScopeRule && DEBUG.test(rule.start ?? "")) {
             removeAt(parent, i);
         } else if (rule instanceof CSSGroupingRule) {
@@ -72,9 +94,10 @@ function cleanNode(node: Node) {
 
 export default definePlugin({
     name: "Optimize This S**t",
-    description: "Removes the design-debug styles Discord ships to every user. They never show, but they make the whole app recompute its styles on every change, which causes lag. Nothing visible changes.",
+    description: "Makes Discord cheaper to draw without changing how it looks: removes design-debug styles it ships to everyone, drops GPU-layer tricks from its CSS, and stops hidden chat separators from getting layers of their own.",
     authors: [{ name: "aquaryuo", id: 975151124824879125n }],
     enabledByDefault: true,
+    managedStyle,
 
     start() {
         for (const sheet of document.styleSheets) clean(sheet);

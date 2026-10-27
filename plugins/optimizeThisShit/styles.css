@@ -1,0 +1,4 @@
+[data-list-id="chat-messages"] i[class*="separator_"][aria-hidden="true"] {
+    z-index: auto !important;
+    pointer-events: none !important;
+}
