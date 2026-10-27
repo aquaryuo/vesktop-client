@@ -48,7 +48,8 @@ function watchLayers() {
 }
 
 const DEBUG = /\.highlight-mana-/;
-const FLAT_3D = /translateZ\(\s*0(px)?\s*\)|translate3d\(\s*[^,()]+,\s*[^,()]+,\s*0(px)?\s*\)/;
+const ZERO = /^0(px)?$/;
+const FOLDER_STRIP = /\.folderButtonContent_[\w-]+$/;
 const REAL_3D = /perspective|preserve-3d|backface/;
 
 type RuleParent = CSSStyleSheet | CSSGroupingRule;
@@ -96,17 +97,82 @@ function stripDebug(parent: RuleParent, index: number, rule: CSSStyleRule) {
     return false;
 }
 
+function setRestorable(style: CSSStyleDeclaration, property: string, value: string | null) {
+    const before = style.getPropertyValue(property);
+    const priority = style.getPropertyPriority(property);
+    if (value === null) style.removeProperty(property);
+    else style.setProperty(property, value, priority);
+    if (style.getPropertyValue(property) === before) return;
+    changes.push({ restore: () => before ? style.setProperty(property, before, priority) : style.removeProperty(property) });
+}
+
+function transformFunctions(value: string) {
+    const parts: string[] = [];
+    let depth = 0, start = 0;
+    for (let i = 0; i < value.length; i++) {
+        if (value[i] === "(") depth++;
+        else if (value[i] === ")" && --depth === 0) {
+            parts.push(value.slice(start, i + 1).trim());
+            start = i + 1;
+        }
+    }
+    return value.slice(start).trim() ? null : parts;
+}
+
+function parseFunction(fn: string) {
+    const open = fn.indexOf("(");
+    return { name: fn.slice(0, open).trim(), args: splitSelectors(fn.slice(open + 1, -1)) };
+}
+
 function flatten(rule: CSSStyleRule) {
     const { style } = rule;
     const transform = style.transform;
-    if (!transform || !FLAT_3D.test(transform) || REAL_3D.test(style.cssText)) return;
-    const flat = transform
-        .replace(/translateZ\(\s*0(px)?\s*\)/g, "translate(0px)")
-        .replace(/translate3d\(\s*([^,()]+),\s*([^,()]+),\s*0(px)?\s*\)/g, "translate($1, $2)");
-    const priority = style.getPropertyPriority("transform");
-    style.setProperty("transform", flat, priority);
-    if (style.transform === transform) return;
-    changes.push({ restore: () => style.setProperty("transform", transform, priority) });
+    if (!transform || !/translateZ|translate3d/.test(transform) || REAL_3D.test(style.cssText)) return;
+    const fns = transformFunctions(transform);
+    if (!fns) return;
+    let changed = false;
+    const flat = fns.map(fn => {
+        const { name, args } = parseFunction(fn);
+        if (name === "translateZ" && args.length === 1 && ZERO.test(args[0])) {
+            changed = true;
+            return "translate(0px)";
+        }
+        if (name === "translate3d" && args.length === 3 && ZERO.test(args[2])) {
+            changed = true;
+            return `translate(${args[0]}, ${args[1]})`;
+        }
+        return fn;
+    });
+    if (changed) setRestorable(style, "transform", flat.join(" "));
+}
+
+function verticalOffset(transform: string) {
+    const fns = transformFunctions(transform);
+    if (fns?.length !== 1) return null;
+    const { name, args } = parseFunction(fns[0]);
+    if (name === "translateZ") return args.length === 1 && ZERO.test(args[0]) ? "0px" : null;
+    if (name === "translateY") return args.length === 1 ? args[0] : null;
+    if (!ZERO.test(args[0])) return null;
+    if (name === "translate" && args.length <= 2) return args[1] ?? "0px";
+    if (name === "translate3d" && args.length === 3 && ZERO.test(args[2])) return args[1];
+    return null;
+}
+
+function moveFolderStrip(rule: CSSStyleRule) {
+    if (!splitSelectors(rule.selectorText).every(s => FOLDER_STRIP.test(s))) return false;
+    const { style } = rule;
+    const { transform } = style;
+    if (transform) {
+        const offset = verticalOffset(transform);
+        if (offset === null) return false;
+        setRestorable(style, "top", offset);
+        setRestorable(style, "transform", null);
+    }
+    for (const property of ["transition", "transition-property"]) {
+        const value = style.getPropertyValue(property);
+        if (/\btransform\b/.test(value)) setRestorable(style, property, value.replace(/\btransform\b/g, "top"));
+    }
+    return true;
 }
 
 function clean(parent: RuleParent) {
@@ -119,7 +185,7 @@ function clean(parent: RuleParent) {
     for (let i = rules.length - 1; i >= 0; i--) {
         const rule = rules[i];
         if (rule instanceof CSSStyleRule) {
-            if (!stripDebug(parent, i, rule)) flatten(rule);
+            if (!stripDebug(parent, i, rule) && !moveFolderStrip(rule)) flatten(rule);
         } else if (typeof CSSScopeRule !== "undefined" && rule instanceof CSSScopeRule && DEBUG.test(rule.start ?? "")) {
             removeAt(parent, i);
         } else if (rule instanceof CSSGroupingRule) {

@@ -6,7 +6,7 @@ My plugins for Vencord and Equicord:
 - Emoji Interface: restyles the emoji, sticker and GIF picker, and adds resizing, GIF tags, a Downloads tab and moving favorites between accounts.
 - MyCommands: lists these plugins' commands in their own section of the command list.
 - FakePing: right-click a message and pick Fake Ping to highlight it like a ping. Only you see it.
-- Optimize This S\*\*t: makes Discord cheaper to draw without changing how it looks. It removes design-debug styles Discord ships to everyone, drops GPU-layer tricks from its CSS, and stops hidden chat separators from getting layers of their own. On by default.
+- Optimize This S\*\*t: makes Discord cheaper to draw without changing how it looks. It removes design-debug styles Discord ships to everyone, drops GPU-layer tricks from its CSS, moves server folder icons with positioning instead of transforms, and stops hidden chat separators from getting layers of their own. On by default. An optional setting, off by default, stops drawing the app behind Settings and other dimmed windows, which makes them smoother but shows a plain dark backdrop instead of the dimmed app.
 
 ## Install
 
