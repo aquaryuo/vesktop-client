@@ -10,7 +10,9 @@ My plugins for Vencord and Equicord:
 
 ## Install
 
-You need Windows and one of these: Vesktop, Equibop, or the Discord app with Vencord or Equicord. Open it at least once before you start.
+You need Vesktop, Equibop, or the Discord app with Vencord or Equicord, on Windows, macOS or Linux. Open it at least once before you start.
+
+### Windows
 
 1. Close it completely. Right-click its icon next to the clock and pick Quit.
 2. Press the Windows key, type `PowerShell` and press Enter.
@@ -23,31 +25,42 @@ You need Windows and one of these: Vesktop, Equibop, or the Discord app with Ven
 4. Wait until it says `installed`, then open it again.
 5. Open Settings (the cog at the bottom left), go to Plugins under Vencord or Equicord, and turn on the ones you want.
 
+### macOS and Linux
+
+1. Close it completely. On macOS, click it and press Cmd+Q. On Linux, right-click its tray icon and pick Quit.
+2. Open Terminal. On macOS, press Cmd+Space, type `Terminal` and press Enter.
+3. Copy this line, paste it into Terminal, and press Enter:
+
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/aquaryuo/vesktop-client/main/install.sh | sh
+   ```
+
+4. Wait until it says `installed`, then open it again.
+5. Open Settings (the cog at the bottom left), go to Plugins under Vencord or Equicord, and turn on the ones you want.
+
 That's it. Updates install by themselves.
 
 <br>
 
 <details>
-<summary>How it works, going back, and macOS or Linux</summary>
+<summary>How it works, and going back</summary>
 
 <br>
 
-Your settings, themes and other plugins stay as they are. The script finds your Vencord or Equicord files and replaces them with this repo's build, which is upstream Vencord or Equicord with these plugins added:
+Your settings, themes and other plugins stay as they are. The script finds your Vencord or Equicord files and replaces them with this repo's build, which is upstream Vencord or Equicord with these plugins added. In the table, Config means `%APPDATA%` on Windows, `~/Library/Application Support` on macOS and `~/.config` on Linux.
 
 | You use | The script replaces | With |
 |---|---|---|
-| Vesktop | `%APPDATA%\vesktop\sessionData\vencordFiles`, or the folder set as Vencord Location | the four `vencordDesktop*` files |
-| Discord app with Vencord | `%APPDATA%\Vencord\dist` | `patcher.js`, `preload.js`, `renderer.js` and `renderer.css` |
-| Equibop | `%APPDATA%\equibop\sessionData\equicord.asar` | `equibop.asar` |
-| Discord app with Equicord | `%APPDATA%\Equicord\equicord.asar` | `desktop.asar` |
+| Vesktop | `Config/vesktop/sessionData/vencordFiles`, or the folder set as Vencord Location | the four `vencordDesktop*` files |
+| Discord app with Vencord | `Config/Vencord/dist` | `patcher.js`, `preload.js`, `renderer.js` and `renderer.css` |
+| Equibop | `Config/equibop/sessionData/equicord.asar` | `equibop.asar` |
+| Discord app with Equicord | `Config/Equicord/equicord.asar` | `desktop.asar` |
 
-Equibop set to load Equicord from a custom folder is skipped. Equicord no longer makes a Vesktop build, so Vesktop always gets the Vencord build.
+On Linux the script also finds Vesktop and Equibop installed from Flatpak, under `~/.var/app/<app id>/config`. Equibop set to load Equicord from a custom folder is skipped. Equicord no longer makes a Vesktop build, so Vesktop always gets the Vencord build.
 
 Updates come through the Updater page in Vencord or Equicord settings, the same as before, but from this repo. With automatic updates on, they install when the app starts.
 
 To go back, use Repair Vencord in Vesktop's tray menu or Repair Equicord in Equibop's, or run the Vencord or Equicord installer and pick Repair for the Discord app. Any of these also removes the plugins, so run the script again if you used one by mistake.
-
-On macOS or Linux, close the app and download the files from the table out of the [latest release](https://github.com/aquaryuo/vesktop-client/releases/latest) into the same folder for your system. For Equibop and Equicord, save the `.asar` file as `equicord.asar`.
 
 </details>
 
