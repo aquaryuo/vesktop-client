@@ -1,3 +1,5 @@
+import { PluginNative } from "@utils/types";
+
 export const FONTS = [
     { alias: "mplus", family: "M PLUS Rounded 1c", axes: "wght@400;700" },
     { alias: "dela", family: "Dela Gothic One" },
@@ -66,26 +68,83 @@ export interface QuoteContent {
     quoter: string;
 }
 
-const FONTS_URL = "https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600&" + FONTS
-    .map(f => "family=" + f.family.replaceAll(" ", "+") + (f.axes ? ":" + f.axes : ""))
-    .join("&") + "&display=swap";
+const Native = VencordNative.pluginHelpers.Quote as PluginNative<typeof import("./native")>;
 
-let fontsReady: Promise<void> | undefined;
+interface Font {
+    family: string;
+    axes?: string;
+}
 
-export function loadFonts() {
-    return fontsReady ??= new Promise(resolve => {
-        const link = document.createElement("link");
-        link.id = "vc-quote-fonts";
-        link.rel = "stylesheet";
-        link.href = FONTS_URL;
-        link.onload = link.onerror = () => resolve();
-        document.head.append(link);
+interface Face {
+    family: string;
+    url: string;
+    ranges: number[][];
+    descriptors: FontFaceDescriptors;
+}
+
+const UI_FONT: Font = { family: "Chakra Petch", axes: "wght@600" };
+const sheets = new Map<string, Promise<Face[]>>();
+const faces = new Map<string, Promise<FontFace>>();
+
+function parseFaces(css: string): Face[] {
+    return [...css.matchAll(/@font-face\s*\{([^}]*)\}/g)].flatMap(([, body]) => {
+        const get = (name: string) => body.match(new RegExp(`${name}:\\s*([^;]+)`))?.[1].trim();
+        const family = get("font-family")?.replace(/^['"]|['"]$/g, "");
+        const url = get("src")?.match(/url\(['"]?([^'")]+)/)?.[1];
+        if (!family || !url) return [];
+        const unicodeRange = get("unicode-range") ?? "U+0-10FFFF";
+        const ranges = unicodeRange.split(",").map(range => {
+            const [lo, hi = lo] = range.trim().slice(2).split("-");
+            return [parseInt(lo.replaceAll("?", "0"), 16), parseInt(hi.replaceAll("?", "F"), 16)];
+        });
+        return [{ family, url, ranges, descriptors: { style: get("font-style") ?? "normal", weight: get("font-weight") ?? "400", unicodeRange } }];
     });
 }
 
+function pickFaces(list: Face[], sample: string) {
+    const codes = new Set(Array.from(sample, c => c.codePointAt(0)!));
+    const claimed = new Set<string>();
+    return [...list].reverse().filter(face => {
+        let used = false;
+        for (const code of codes) {
+            const key = `${face.descriptors.style} ${face.descriptors.weight} ${code}`;
+            if (claimed.has(key) || !face.ranges.some(([lo, hi]) => code >= lo && code <= hi)) continue;
+            claimed.add(key);
+            used = true;
+        }
+        return used;
+    });
+}
+
+function loadFace(face: Face) {
+    let loaded = faces.get(face.url);
+    if (!loaded) {
+        loaded = Native.getFont(face.url).then(data => new FontFace(face.family, data, face.descriptors).load()).then(font => {
+            document.fonts.add(font);
+            return font;
+        });
+        loaded.catch(() => faces.delete(face.url));
+        faces.set(face.url, loaded);
+    }
+    return loaded;
+}
+
+async function loadFont(font: Font, sample?: string) {
+    const url = "https://fonts.googleapis.com/css2?family=" + font.family.replaceAll(" ", "+") + (font.axes ? ":" + font.axes : "");
+    let sheet = sheets.get(url);
+    if (!sheet) {
+        sheet = Native.getFont(url).then(data => parseFaces(new TextDecoder().decode(data)));
+        sheet.catch(() => sheets.delete(url));
+        sheets.set(url, sheet);
+    }
+    const list = await sheet;
+    await Promise.all((sample === undefined ? list : pickFaces(list, sample)).map(loadFace));
+}
+
 export function unloadFonts() {
-    document.getElementById("vc-quote-fonts")?.remove();
-    fontsReady = undefined;
+    for (const loaded of faces.values()) loaded.then(font => document.fonts.delete(font), () => { });
+    faces.clear();
+    sheets.clear();
 }
 
 function fontSpec(family: string, size: number, bold: boolean, italic: boolean) {
@@ -123,7 +182,8 @@ function wrap(text: string, maxWidth: number, measure: (s: string) => number) {
 }
 
 export async function renderQuote(content: QuoteContent, style: QuoteStyle): Promise<Blob> {
-    const family = (FONTS.find(f => f.alias === style.font) ?? FONTS[0]).family;
+    const font = FONTS.find(f => f.alias === style.font) ?? FONTS[0];
+    const { family } = font;
     const [width, height] = style.vertical ? [720, 1280] : [1200, 630];
     const side = style.vertical ? width : height;
     const avatar = style.server && content.serverAvatar || content.avatar;
@@ -139,12 +199,8 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
     }).trim();
     const credit = "Quoted by @" + content.quoter;
 
-    await loadFonts();
     const sample = text + content.name + content.username + credit + "“”-";
-    await Promise.all([
-        document.fonts.load(fontSpec(family, 40, style.bold, style.italic), sample),
-        document.fonts.load(fontSpec(family, 40, false, true), sample)
-    ]);
+    await Promise.all([loadFont(UI_FONT), loadFont(font, sample), loadFont(FONTS[0], sample)]).catch(() => { });
 
     const canvas = document.createElement("canvas");
     canvas.width = width;
