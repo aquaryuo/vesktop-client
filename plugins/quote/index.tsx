@@ -10,7 +10,7 @@ import { findByCodeLazy } from "@webpack";
 import { applyPalette, GIFEncoder, quantize } from "gifenc";
 import { ChannelStore, Constants, FluxDispatcher, GuildMemberStore, IconUtils, MessageStore, PendingReplyStore, React, RestAPI, showToast, UploadHandler, UserProfileStore, UserStore, UserUtils, useEffect, useRef, useState } from "@webpack/common";
 
-import { EFFECTS, EMOJI_BASE, FONTS, loadFonts, PLACES, QuoteContent, QuoteStyle, renderQuote, unloadFonts } from "./draw";
+import { EFFECTS, EMOJI_BASE, FONTS, PLACES, QuoteContent, QuoteStyle, renderQuote, unloadFonts } from "./draw";
 import managedStyle from "./styles.css?managed";
 
 interface Quote {
@@ -366,10 +366,6 @@ export default definePlugin({
     authors: [{ name: "aquaryuo", id: 975151124824879125n }],
     managedStyle,
     settings,
-
-    start() {
-        loadFonts();
-    },
 
     stop() {
         quotes.clear();
