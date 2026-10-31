@@ -806,7 +806,10 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
         const resize = (e: MouseEvent) => {
             if ((e.target as Element).matches?.('[class*="resizeHandle_"]')) freeze(drawer);
         };
-        const accepts = (e: DragEvent) => !!e.dataTransfer && ["Files", "text/uri-list", "text/plain"].some(type => e.dataTransfer!.types.includes(type));
+        let fromPicker = false;
+        const start = (e: DragEvent) => { fromPicker = drawer.contains(e.target as Node); };
+        const end = () => { fromPicker = false; };
+        const accepts = (e: DragEvent) => !fromPicker && !!e.dataTransfer && ["Files", "text/uri-list", "text/plain"].some(type => e.dataTransfer!.types.includes(type));
         const inside = (e: DragEvent) => {
             const rect = drawer.getBoundingClientRect();
             return e.clientX >= rect.left && e.clientX < rect.right && e.clientY >= rect.top && e.clientY < rect.bottom;
@@ -838,7 +841,7 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
             handleDrop(dropTarget(drawer), e.dataTransfer!);
         };
         const win = drawer.ownerDocument.defaultView ?? window;
-        const drags: [string, (e: DragEvent) => void][] = [["dragenter", over], ["dragover", over], ["dragleave", leave], ["drop", drop]];
+        const drags: [string, (e: DragEvent) => void][] = [["dragstart", start], ["dragend", end], ["dragenter", over], ["dragover", over], ["dragleave", leave], ["drop", drop]];
         drawer.addEventListener("click", close);
         drawer.addEventListener("pointerover", onHover);
         drawer.addEventListener("mousedown", resize, true);

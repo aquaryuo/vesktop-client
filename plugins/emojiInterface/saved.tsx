@@ -1,8 +1,8 @@
 import { addContextMenuPatch, findGroupChildrenByChildId, NavContextMenuPatchCallback, removeContextMenuPatch } from "@api/ContextMenu";
 import * as DataStore from "@api/DataStore";
 import { plugins } from "@api/PluginManager";
-import { insertTextIntoChatInputBox, sendMessage } from "@utils/discord";
-import { chooseFile } from "@utils/web";
+import { copyWithToast, insertTextIntoChatInputBox, sendMessage } from "@utils/discord";
+import { chooseFile, saveFile } from "@utils/web";
 import { CloudUpload as TCloudUpload } from "@vencord/discord-types";
 import { CloudUploadPlatform } from "@vencord/discord-types/enums";
 import { findByCodeLazy, findLazy } from "@webpack";
@@ -293,11 +293,13 @@ function openItemMenu(e: ReactMouseEvent, item: SavedItem) {
         : [
             <Menu.MenuItem key="file" id="vc-ei-send-file" label="Send as file" action={() => sendSaved(item, "file")} />,
             <Menu.MenuItem key="link" id="vc-ei-send-link" label="Paste link" disabled={!item.id} action={() => sendSaved(item, "link")} />,
+            copyItem(item),
             <Menu.MenuItem key="clone" id="vc-ei-clone" label="Clone to a server" action={() => openClone(fromItem(item))} />
         ];
     ContextMenuApi.openContextMenu(e, () => (
         <Menu.Menu navId="vc-ei-saved" onClose={ContextMenuApi.closeContextMenu} aria-label={item.name}>
             {entries}
+            {downloadItem(item.name, item.kind, () => blobFor(item))}
             <Menu.MenuItem id="vc-ei-remove" label="Remove from Downloads" color="danger" action={() => removeSaved(item)} />
         </Menu.Menu>
     ));
@@ -620,9 +622,27 @@ export function PlusButton({ kind, onUpload, uploadDisabled }: { kind: ItemKind 
     );
 }
 
+function codeFor(source: { kind: ItemKind; name: string; id?: string; animated?: boolean; }) {
+    return `<${source.kind === "emoji" && source.animated ? "a" : ""}:${source.name}:${source.id}>`;
+}
+
+function copyItem(source: { kind: ItemKind; name: string; id?: string; animated?: boolean; }) {
+    const code = codeFor(source);
+    return <Menu.MenuItem key="vc-ei-copy" id="vc-ei-copy" label={`Copy as <${source.kind === "emoji" && source.animated ? "a" : ""}:name:id>`} disabled={!source.id} action={() => copyWithToast(code, `Copied ${code}`)} />;
+}
+
+function downloadItem(name: string, kind: ItemKind, blob: () => Promise<Blob>) {
+    return <Menu.MenuItem key="vc-ei-download" id="vc-ei-download" label="Download file" action={() => blob().then(
+        data => saveFile(new File([data], `${name.replace(/[^\w-]+/g, "_") || kind}${extension("", data.type)}`, { type: data.type })),
+        () => showToast({ text: `Couldn't download that ${kind}.` })
+    )} />;
+}
+
 function menuItems(source: Source) {
     const saved = !!source.id && isSaved(source.kind, source.id);
     return [
+        copyItem(source),
+        downloadItem(source.name, source.kind, source.blob),
         <Menu.MenuItem key="vc-ei-save" id="vc-ei-save" label={saved ? "Remove from Downloads" : "Save to Downloads"} action={() => {
             if (saved) {
                 const item = items.find(i => i.key === savedKey(source.kind, source.id!));
