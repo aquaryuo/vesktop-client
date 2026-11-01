@@ -5,11 +5,11 @@ import { classes } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { chooseFile, saveFile } from "@utils/web";
 import { findStoreLazy } from "@webpack";
-import { ChannelStore, EmojiStore, FluxDispatcher, GuildChannelStore, GuildStore, PermissionsBits, PermissionStore, React, showToast, UserSettingsActionCreators, UserStore, useEffect, useLayoutEffect, useRef, useState } from "@webpack/common";
+import { ChannelStore, EmojiStore, FluxDispatcher, GuildChannelStore, GuildStore, PermissionsBits, PermissionStore, React, showToast, UserSettingsActionCreators, UserStore, useEffect, useLayoutEffect, useMemo, useRef, useState } from "@webpack/common";
 import type { ImgHTMLAttributes, MouseEvent as ReactMouseEvent, SyntheticEvent } from "react";
 
 import { allowGif, filterGifs, gifContent, gifFlags, GifTools, pickerGone, pickerMounted, stopGifs, tagEmpty, trackGif, untrackGif } from "./gifs";
-import { addGifFile, addGifLink, ItemKind, Kind, messageMenu, pickerMenu, PlusButton, restoreCloner, revokeUrls, saveDropped, SavedPanel, SavedStrip } from "./saved";
+import { addGifFile, addGifLink, hideCloner, ItemKind, Kind, messageMenu, pickerMenu, PlusButton, restoreCloner, revokeUrls, saveDropped, SavedPanel, SavedStrip } from "./saved";
 import managedStyle from "./styles.css?managed";
 
 const MIN_HEIGHT = 280;
@@ -132,6 +132,10 @@ export const settings = definePluginSettings({
         type: OptionType.NUMBER,
         description: "Picker height in pixels, 0 for Discord's. Drag the picker's top edge to set it, or double-click the edge to reset it",
         default: 0
+    },
+    hidden: {
+        type: OptionType.CUSTOM,
+        default: [] as string[]
     },
     transfer: {
         type: OptionType.COMPONENT,
@@ -747,6 +751,43 @@ function StorageChannel() {
     );
 }
 
+type Picker = "emoji" | "sticker";
+
+interface Category {
+    type: string;
+    id?: string;
+    categoryId?: string;
+    name: string;
+    guild?: { id: string; name: string; };
+}
+
+const PICKERS: [Picker, string][] = [["emoji", "Hide emoji categories"], ["sticker", "Hide sticker categories"]];
+const shownLists: Record<Picker, Category[]> = { emoji: [], sticker: [] };
+const categoryKey = (picker: Picker, category: Category) => `${picker}:${category.type === "GUILD" ? category.guild?.id ?? category.id : category.categoryId ?? category.id}`;
+const useHiddenKeys = (): string => settings.use(["hidden"]).hidden.join("\n");
+const categoryName = (category: Category) => category.guild?.name ?? (category.type === "UNICODE" ? category.name.replace(/^./, c => c.toUpperCase()) : category.name);
+
+function Categories() {
+    const { hidden } = settings.use(["hidden"]);
+    const groups = PICKERS.filter(([picker]) => shownLists[picker].length);
+    const toggle = (key: string) => {
+        const now: string[] = settings.store.hidden;
+        settings.store.hidden = now.includes(key) ? now.filter(k => k !== key) : [...now, key];
+    };
+    return groups.map(([picker, label], i) => (
+        <div key={picker} className="vc-ei-option">
+            <span className="vc-ei-label">{label}</span>
+            <div className="vc-ei-choices" role="group" aria-label={label}>
+                {shownLists[picker].filter(category => category.type !== "EMPTY_GUILD_UPSELL").map(category => {
+                    const key = categoryKey(picker, category);
+                    return <button key={key} type="button" className="vc-ei-choice" aria-pressed={hidden.includes(key)} onClick={() => toggle(key)}>{categoryName(category)}</button>;
+                })}
+            </div>
+            {i === groups.length - 1 && <span className="vc-ei-note">Click a category to hide it from the picker, and again to show it. Search still finds hidden ones.</span>}
+        </div>
+    ));
+}
+
 function Panel({ onReset }: { onReset(): void; }) {
     const { columns, gap, hoverPlay, gifGuard, autoAnimate, scale, savedPlace, savedSend, randomNames } = settings.use(["columns", "gap", "hoverPlay", "gifGuard", "autoAnimate", "scale", "savedPlace", "savedSend", "randomNames"]);
     return (
@@ -776,6 +817,7 @@ function Panel({ onReset }: { onReset(): void; }) {
             <Choices label="Send downloads you can't use as" value={savedSend} options={[["file", "File"], ["link", "Link"]]} onChange={how => settings.store.savedSend = how} />
             <StorageChannel />
             <Option label="Give uploaded and sent files a random name" value={randomNames} onChange={on => settings.store.randomNames = on} />
+            <Categories />
             <div className="vc-ei-option">
                 <span className="vc-ei-label">Picker size</span>
                 <button type="button" className="vc-ei-button" onClick={onReset}>Reset size</button>
@@ -1070,8 +1112,30 @@ export default definePlugin({
                 {
                     match: /(isInspected:(\i),isDisabled:\i,showPulse:.{0,1400}?allowAnimatedEmoji:)(\i)(,isLocked:)/,
                     replace: "$1$self.animate($3,$2)$4"
+                },
+                {
+                    match: /(function \i\(\i,(\i)\)\{)(let \i=new Map,\i=\i\.has\(\2\.sectionId\))/,
+                    replace: '$1if($self.isHidden("emoji",$2))return;$3'
+                },
+                {
+                    match: /\]\)\}\(\{gridWidth:/,
+                    replace: ",$self.useHiddenKeys()])}({gridWidth:"
                 }
             ]
+        },
+        {
+            find: "getEmojiUnavailableReasons({categoryEmojis",
+            replacement: {
+                match: /return null!=(\i)\?\[\1,\.\.\.(\i)\]:\2\}/,
+                replace: 'return $self.useShown("emoji",null!=$1?[$1,...$2]:$2)}'
+            }
+        },
+        {
+            find: "EMPTY_GUILD_UPSELL,id:",
+            replacement: {
+                match: /return (\i\.useMemo\(\(\)=>\i\.filter\((\i)=>\2\.type===\i\.\i\.EMPTY_GUILD_UPSELL\|\|\2\.stickers\.length>0,\[\]\),\[\i\]\))\}/,
+                replace: 'return $self.useShown("sticker",$1)}'
+            }
         },
         {
             find: "backToFrontPage=",
@@ -1174,6 +1238,7 @@ export default definePlugin({
         window.addEventListener("keydown", trackInput, true);
         window.addEventListener("pointerdown", trackInput, true);
         applyGap();
+        hideCloner();
         if (settings.store.defaultsVersion < 1) {
             settings.store.columns = 3;
             settings.store.hoverPlay = false;
@@ -1302,6 +1367,22 @@ export default definePlugin({
             if (!picker.props.hideFavorites) picker.handleSelectItem(types.FAVORITES);
         } else if (view === "trending") picker.handleSelectItem(types.TRENDING_GIFS);
         else if (view.startsWith(CATEGORY)) picker.handleSelectItem(types.TRENDING_CATEGORY, view.slice(CATEGORY.length));
+    },
+
+    useHiddenKeys,
+
+    isHidden(picker: Picker, category: Category) {
+        return settings.store.hidden.includes(categoryKey(picker, category));
+    },
+
+    useShown(picker: Picker, list: Category[]) {
+        const keys = useHiddenKeys();
+        shownLists[picker] = list;
+        return useMemo(() => {
+            if (!keys) return list;
+            const hidden = new Set(keys.split("\n"));
+            return list.filter(category => !hidden.has(categoryKey(picker, category)));
+        }, [list, keys]);
     },
 
     animate(allowed: boolean, inspected: boolean) {

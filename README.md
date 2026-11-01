@@ -3,7 +3,7 @@
 My plugins for Vencord and Equicord:
 
 - Quote: `/quote` on a reply, or `/quote-link` with a message link, draws the message as a quote image that only you see. You can send it, save it or copy it.
-- Emoji Interface: restyles the emoji, sticker and GIF picker, and adds resizing, GIF tags, a Downloads tab and moving favorites between accounts.
+- Emoji Interface: restyles the emoji, sticker and GIF picker, and adds resizing, GIF tags, a Downloads tab, hiding servers and categories, and moving favorites between accounts.
 - MyCommands: lists these plugins' commands in their own section of the command list.
 - FakePing: right-click a message and pick Fake Ping to highlight it like a ping. Only you see it.
 - Optimize This S\*\*t: makes Discord cheaper to draw without changing how it looks. It removes design-debug styles Discord ships to everyone, drops GPU-layer tricks from its CSS, moves server folder icons with positioning instead of transforms, stops hidden chat separators from getting layers of their own, and makes menus open faster: menus and popouts no longer restyle the whole app when they open or close, and emoji menus no longer rebuild Discord's emoji list. On by default. An optional setting, off by default, stops drawing the app behind Settings and other dimmed windows, which makes them smoother but shows a plain dark backdrop instead of the dimmed app.

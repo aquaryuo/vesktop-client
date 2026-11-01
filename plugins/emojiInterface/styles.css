@@ -1414,7 +1414,7 @@
 }
 
 .vc-ei-emojis [class*="emojiItem_"] > :first-child,
-.vc-ei [data-type="sticker"] [class*="stickerNode_"] {
+.vc-ei [data-type="sticker"] > * {
     pointer-events: none;
 }
 
@@ -1469,6 +1469,7 @@
 .vc-ei #sticker-picker-grid :is([class*="packHeader_"], [class*="bleedHeader_"]) {
     z-index: 4;
     background-color: var(--q-bg);
+    box-shadow: -8px 0 var(--q-bg), 8px 0 var(--q-bg);
 }
 
 .vc-ei [class*="emptyGuildUpsell_"][class*="emptyGuildUpsell_"] {

@@ -1,6 +1,5 @@
-import { addContextMenuPatch, findGroupChildrenByChildId, NavContextMenuPatchCallback, removeContextMenuPatch } from "@api/ContextMenu";
+import { addGlobalContextMenuPatch, findGroupChildrenByChildId, GlobalContextMenuPatchCallback, NavContextMenuPatchCallback, removeGlobalContextMenuPatch } from "@api/ContextMenu";
 import * as DataStore from "@api/DataStore";
-import { plugins } from "@api/PluginManager";
 import { copyWithToast, insertTextIntoChatInputBox, sendMessage } from "@utils/discord";
 import { chooseFile, saveFile } from "@utils/web";
 import { CloudUpload as TCloudUpload } from "@vencord/discord-types";
@@ -47,7 +46,7 @@ const MAX_GIF_FILE = 10 * 1024 * 1024;
 const GIF_TYPES = /^(image\/(gif|webp|png|avif)|video\/(mp4|webm))$/;
 const EMOJI_NAME = /^\w{2,32}$/;
 const PLUS = "M12 5v14M5 12h14";
-const CLONER_ID = "emote-cloner";
+const CLONER_ID = "vc-em-clone";
 
 const SILENT = 1 << 12;
 
@@ -653,21 +652,15 @@ function menuItems(source: Source) {
     ];
 }
 
-function hideCloner(navId: string, children: any[]) {
-    const cloner: any = plugins.ExpressionCloner;
-    const patch = cloner?.contextMenus?.[navId];
-    if (cloner?.started && patch) removeContextMenuPatch(navId, patch);
+const dropOtherClone: GlobalContextMenuPatchCallback = (navId, children) => {
+    if ((navId !== "message" && navId !== "expression-picker") || !findGroupChildrenByChildId("vc-ei-clone", children)) return;
     const group = findGroupChildrenByChildId(CLONER_ID, children);
     const index = group?.findIndex(child => child?.props?.id === CLONER_ID) ?? -1;
     if (group && index >= 0) group.splice(index, 1);
-}
+};
 
-export function restoreCloner() {
-    const cloner: any = plugins.ExpressionCloner;
-    if (!cloner?.started) return;
-    for (const [navId, patch] of Object.entries(cloner.contextMenus ?? {}))
-        addContextMenuPatch(navId, patch as NavContextMenuPatchCallback);
-}
+export const hideCloner = () => addGlobalContextMenuPatch(dropOtherClone);
+export const restoreCloner = () => removeGlobalContextMenuPatch(dropOtherClone);
 
 function emojiName(id: string, message: any) {
     const known: any = EmojiStore.getCustomEmojiById(id);
@@ -688,7 +681,6 @@ function animatedUrl(url?: string) {
 }
 
 export const messageMenu: NavContextMenuPatchCallback = (children, props: any) => {
-    hideCloner("message", children);
     const { favoriteableId: id, favoriteableType: type, itemHref, itemSrc, message } = props ?? {};
     if (!id) return;
     let source: Source | undefined;
@@ -703,7 +695,6 @@ export const messageMenu: NavContextMenuPatchCallback = (children, props: any) =
 };
 
 export const pickerMenu: NavContextMenuPatchCallback = (children, props: any) => {
-    hideCloner("expression-picker", children);
     const { id, name, type, animated, formatType } = props?.target?.dataset ?? {};
     if (!id) return;
     if (type === "emoji" && name) children.push(...menuItems(fromDiscord("emoji", id, name, animated === "true")));
