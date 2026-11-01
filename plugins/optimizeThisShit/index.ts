@@ -1,5 +1,6 @@
 import { definePluginSettings } from "@api/Settings";
 import definePlugin, { OptionType } from "@utils/types";
+import { ChannelStore, SelectedChannelStore } from "@webpack/common";
 
 import managedStyle from "./styles.css?managed";
 
@@ -205,11 +206,31 @@ function cleanNode(node: Node) {
 
 export default definePlugin({
     name: "Optimize This S**t",
-    description: "Makes Discord cheaper to draw without changing how it looks: removes design-debug styles it ships to everyone, drops GPU-layer tricks from its CSS, and stops hidden chat separators from getting layers of their own.",
+    description: "Makes Discord cheaper to draw without changing how it looks: removes design-debug styles it ships to everyone, drops GPU-layer tricks from its CSS, stops hidden chat separators from getting layers of their own, and makes menus open faster: they no longer restyle the whole app, and emoji menus no longer rebuild Discord's emoji list.",
     authors: [{ name: "aquaryuo", id: 975151124824879125n }],
     enabledByDefault: true,
     managedStyle,
     settings,
+
+    patches: [
+        {
+            find: "getDisambiguatedEmojiContext().getById(",
+            replacement: [
+                {
+                    match: /getDisambiguatedEmojiContext\(\)(?=\.getById\()/,
+                    replace: "getDisambiguatedEmojiContext($self.emojiGuild())"
+                },
+                {
+                    match: /\(0,(\i\.\i)\)\(null,(\i)\)(?=;return)/,
+                    replace: "(0,$1)($self.emojiGuild(),$2)"
+                }
+            ]
+        }
+    ],
+
+    emojiGuild() {
+        return ChannelStore.getChannel(SelectedChannelStore.getChannelId())?.getGuildId() ?? null;
+    },
 
     start() {
         for (const sheet of document.styleSheets) clean(sheet);

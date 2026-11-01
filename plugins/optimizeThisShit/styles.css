@@ -3,6 +3,11 @@
     pointer-events: none !important;
 }
 
+@property --floating-ui-scrollbar-width {
+    syntax: "*";
+    inherits: false;
+}
+
 [data-vc-ots-covered] {
     content-visibility: hidden !important;
 }
