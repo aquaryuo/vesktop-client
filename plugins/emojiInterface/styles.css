@@ -376,7 +376,7 @@
     --custom-input-border-radius: 0;
     --custom-input-hover-border-color: var(--q-line-strong);
     --custom-input-focus-border-color: var(--q-accent);
-    --custom-text-input-height: 40px;
+    --custom-text-input-height: 34px;
     --input-placeholder-text-default: var(--q-sub);
     --icon-strong: var(--q-sub);
     --icon-subtle: var(--q-sub);
@@ -896,8 +896,9 @@
     display: grid;
     flex: none;
     place-items: center;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 34px;
+    margin-inline-end: 2px;
     padding: 0;
     border: 1px solid var(--q-line-strong);
     background: transparent;
@@ -982,6 +983,10 @@
     gap: 8px;
     align-items: center;
     padding-top: 12px;
+}
+
+.vc-ei-saved-head .vc-ei-input {
+    height: 34px;
 }
 
 .vc-ei-saved section {
@@ -1679,6 +1684,11 @@
 
 .vc-ei .vc-ei-gifhead > .vc-ei-plus {
     order: 2;
+}
+
+.vc-ei .vc-ei-gifhead > .vc-ei-edit {
+    order: 1;
+    margin-inline-end: -6px;
 }
 
 .vc-ei .vc-ei-gifhead + .vc-ei-plus {
