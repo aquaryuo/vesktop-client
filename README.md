@@ -85,3 +85,8 @@ Don't run `install.ps1` on the development PC. Vesktop there loads `vencord\dist
 - `node_modules` and `packages` are junctions to Vencord's, so plugins can import its packages, such as `@vencord/discord-types`.
 
 You need git and Node 22 or newer. pnpm runs through corepack, so it needs no separate install.
+
+---
+
+> New discord server, feel free to drop by
+> https://discord.gg/ryuo
