@@ -27,6 +27,8 @@ const KEY = "EmojiInterface_gifTags";
 const SPOILER = "spoiler";
 const ARM_MS = 4000;
 const MAX_NAME = 24;
+const PENCIL = "M21.17 6.81a2.82 2.82 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5zM15 5l4 4";
+const DONE = "M20 6 9 17l-5-5";
 
 let data: TagData = { tags: [], gifs: {} };
 let loaded: Promise<void> | undefined;
@@ -179,7 +181,7 @@ function TagEmpty({ name, searching }: { name: string; searching: boolean; }) {
     return (
         <div className="vc-ei-empty" role="status">
             <strong>{searching ? `No GIFs tagged ${name} match your search` : `No GIFs tagged ${name} yet`}</strong>
-            <span>{searching ? "Try another search, or show all your favorites." : `Click Edit, pick ${name}, then click the GIFs you want to tag.`}</span>
+            <span>{searching ? "Try another search, or show all your favorites." : `Click the pencil, pick ${name}, then click the GIFs you want to tag.`}</span>
             <button type="button" className="vc-ei-button" onClick={() => { filter = ""; refresh(); }}>Show all favorites</button>
         </div>
     );
@@ -329,15 +331,20 @@ export function GifTools({ count }: { count: number; }) {
     const brushName = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
     const scopeName = scope && tags.find(tag => tag.id === filter)?.name;
     const hint = brushName ? `Click GIFs to add or remove ${brushName}.` : "Pick one or more tags, then click GIFs to tag them.";
+    const editLabel = editing ? "Done editing tags" : "Edit tags";
     return (
-        <div className="vc-ei-giftools" ref={ref} data-vc-ei-editing={editing || undefined}>
-            <div className="vc-ei-chips" role="group" aria-label={editing ? "Tags to apply, pick one or more" : "Filter favorites by tag"}>
-                {!editing && <button type="button" className="vc-ei-choice" aria-pressed={!filter} aria-label={`All, ${count} favorite GIFs`} onClick={() => { filter = ""; refresh(); }}>All<span className="vc-ei-count">{count}</span></button>}
-                {tags.map(tag => <TagChip key={tag.id} tag={tag} />)}
-                {editing && <NewTag />}
-                <button type="button" className="vc-ei-choice vc-ei-edit" aria-pressed={editing} onClick={toggleEditing}>{editing ? "Done" : "Edit"}</button>
+        <>
+            <button type="button" className="vc-ei-plus vc-ei-edit" aria-label={editLabel} title={editLabel} aria-pressed={editing} onClick={toggleEditing}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d={editing ? DONE : PENCIL} /></svg>
+            </button>
+            <div className="vc-ei-giftools" ref={ref} data-vc-ei-editing={editing || undefined}>
+                <div className="vc-ei-chips" role="group" aria-label={editing ? "Tags to apply, pick one or more" : "Filter favorites by tag"}>
+                    {!editing && <button type="button" className="vc-ei-choice" aria-pressed={!filter} aria-label={`All, ${count} favorite GIFs`} onClick={() => { filter = ""; refresh(); }}>All<span className="vc-ei-count">{count}</span></button>}
+                    {tags.map(tag => <TagChip key={tag.id} tag={tag} />)}
+                    {editing && <NewTag />}
+                </div>
+                {editing && <p className="vc-ei-hint" role="status">{scopeName ? `Editing GIFs tagged ${scopeName}. ${hint}` : hint}</p>}
             </div>
-            {editing && <p className="vc-ei-hint" role="status">{scopeName ? `Editing GIFs tagged ${scopeName}. ${hint}` : hint}</p>}
-        </div>
+        </>
     );
 }

@@ -1190,9 +1190,9 @@
     padding: 0 12px;
 }
 
-.vc-ei-chips > .vc-ei-edit {
-    flex-grow: 0.5;
-    min-width: 64px;
+.vc-ei-edit[aria-pressed="true"] {
+    border-color: var(--q-accent);
+    background: color-mix(in srgb, var(--q-accent) 18%, transparent);
 }
 
 .vc-ei-tag {
