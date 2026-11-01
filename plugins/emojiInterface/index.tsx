@@ -5,7 +5,7 @@ import { classes } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { chooseFile, saveFile } from "@utils/web";
 import { findStoreLazy } from "@webpack";
-import { ChannelStore, EmojiStore, FluxDispatcher, GuildChannelStore, GuildStore, PermissionsBits, PermissionStore, React, showToast, UserSettingsActionCreators, UserStore, useEffect, useLayoutEffect, useMemo, useRef, useState } from "@webpack/common";
+import { ChannelStore, ContextMenuApi, EmojiStore, FluxDispatcher, GuildChannelStore, GuildStore, Menu, PermissionsBits, PermissionStore, React, showToast, UserSettingsActionCreators, UserStore, useEffect, useLayoutEffect, useMemo, useRef, useState } from "@webpack/common";
 import type { ImgHTMLAttributes, MouseEvent as ReactMouseEvent, SyntheticEvent } from "react";
 
 import { allowGif, filterGifs, gifContent, gifFlags, GifTools, pickerGone, pickerMounted, stopGifs, tagEmpty, trackGif, untrackGif } from "./gifs";
@@ -761,30 +761,67 @@ interface Category {
     guild?: { id: string; name: string; };
 }
 
-const PICKERS: [Picker, string][] = [["emoji", "Hide emoji categories"], ["sticker", "Hide sticker categories"]];
+const PICKERS: [Picker, string][] = [["emoji", "Emoji"], ["sticker", "Stickers"]];
 const shownLists: Record<Picker, Category[]> = { emoji: [], sticker: [] };
 const categoryKey = (picker: Picker, category: Category) => `${picker}:${category.type === "GUILD" ? category.guild?.id ?? category.id : category.categoryId ?? category.id}`;
 const useHiddenKeys = (): string => settings.use(["hidden"]).hidden.join("\n");
 const categoryName = (category: Category) => category.guild?.name ?? (category.type === "UNICODE" ? category.name.replace(/^./, c => c.toUpperCase()) : category.name);
 
+function toggleCategory(key: string) {
+    const now: string[] = settings.store.hidden;
+    settings.store.hidden = now.includes(key) ? now.filter(k => k !== key) : [...now, key];
+}
+
+function categoryEntries(picker: Picker, hidden: string[], query: string): [string, string][] {
+    const list = shownLists[picker].filter(category => category.type !== "EMPTY_GUILD_UPSELL");
+    if (query) return list.map(category => [categoryKey(picker, category), categoryName(category)] as [string, string]).filter(([, name]) => name.toLowerCase().includes(query));
+    return hidden.filter(key => key.startsWith(`${picker}:`)).map(key => {
+        const category = list.find(c => categoryKey(picker, c) === key);
+        const id = key.slice(picker.length + 1);
+        return [key, category ? categoryName(category) : GuildStore.getGuild(id)?.name ?? id];
+    });
+}
+
 function Categories() {
     const { hidden } = settings.use(["hidden"]);
-    const groups = PICKERS.filter(([picker]) => shownLists[picker].length);
-    const toggle = (key: string) => {
-        const now: string[] = settings.store.hidden;
-        settings.store.hidden = now.includes(key) ? now.filter(k => k !== key) : [...now, key];
-    };
-    return groups.map(([picker, label], i) => (
-        <div key={picker} className="vc-ei-option">
-            <span className="vc-ei-label">{label}</span>
-            <div className="vc-ei-choices" role="group" aria-label={label}>
-                {shownLists[picker].filter(category => category.type !== "EMPTY_GUILD_UPSELL").map(category => {
-                    const key = categoryKey(picker, category);
-                    return <button key={key} type="button" className="vc-ei-choice" aria-pressed={hidden.includes(key)} onClick={() => toggle(key)}>{categoryName(category)}</button>;
-                })}
-            </div>
-            {i === groups.length - 1 && <span className="vc-ei-note">Click a category to hide it from the picker, and again to show it. Search still finds hidden ones.</span>}
+    const [query, setQuery] = useState("");
+    const search = query.trim().toLowerCase();
+    const groups = PICKERS.map(([picker, label]) => [picker, label, categoryEntries(picker, hidden, search)] as const).filter(([, , list]) => list.length);
+    return (
+        <div className="vc-ei-option">
+            <label className="vc-ei-label" htmlFor="vc-ei-category-search">Hidden categories</label>
+            <input id="vc-ei-category-search" className="vc-ei-input" type="search" placeholder="Search servers and categories" value={query} onChange={e => setQuery(e.currentTarget.value)} />
+            {groups.map(([picker, label, list]) => (
+                <div key={picker} className="vc-ei-categories" role="group" aria-label={label}>
+                    <span className="vc-ei-note">{label}</span>
+                    <div className="vc-ei-choices">
+                        {list.map(([key, name]) => <button key={key} type="button" className="vc-ei-choice" aria-pressed={hidden.includes(key)} onClick={() => toggleCategory(key)}>{name}</button>)}
+                    </div>
+                </div>
+            ))}
+            {!groups.length && <span className="vc-ei-note">{search ? "No category matches." : "Nothing is hidden."}</span>}
+            <span className="vc-ei-note">Right-click a server in the picker to hide it, or search for it here and click it. Click a hidden one again to show it. Search in the picker still finds hidden ones.</span>
         </div>
+    );
+}
+
+function hideMenu(drawer: HTMLElement, e: MouseEvent) {
+    const el = (e.target as Element).closest?.('[class*="categoryList"] [aria-label], [class*="wrapper_"][class*="eader_"]');
+    const picker: Picker | null = drawer.querySelector("#sticker-picker-tab-panel") ? "sticker" : drawer.querySelector("#emoji-picker-tab-panel") ? "emoji" : null;
+    if (!el || !picker || !drawer.contains(el)) return;
+    const label = (el.getAttribute("aria-label") ?? el.textContent ?? "").trim().toLowerCase();
+    const category = label && shownLists[picker].find(c => [categoryName(c), c.name, c.id].some(text => text?.toLowerCase() === label));
+    if (!category) return;
+    const key = categoryKey(picker, category), name = categoryName(category);
+    e.preventDefault();
+    e.stopPropagation();
+    ContextMenuApi.openContextMenu(e as any, () => (
+        <Menu.Menu navId="vc-ei-category" onClose={ContextMenuApi.closeContextMenu} aria-label={name}>
+            <Menu.MenuItem id="vc-ei-hide" label={`Hide ${name}`} action={() => {
+                if (!settings.store.hidden.includes(key)) toggleCategory(key);
+                showToast({ text: `Hid ${name}${/[.!?]$/.test(name) ? "" : "."} You can show it again in the picker settings.` });
+            }} />
+        </Menu.Menu>
     ));
 }
 
@@ -884,12 +921,15 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
         };
         const win = drawer.ownerDocument.defaultView ?? window;
         const drags: [string, (e: DragEvent) => void][] = [["dragstart", start], ["dragend", end], ["dragenter", over], ["dragover", over], ["dragleave", leave], ["drop", drop]];
+        const menu = (e: MouseEvent) => hideMenu(drawer, e);
         drawer.addEventListener("click", close);
+        drawer.addEventListener("contextmenu", menu);
         drawer.addEventListener("pointerover", onHover);
         drawer.addEventListener("mousedown", resize, true);
         drags.forEach(([type, listener]) => win.addEventListener(type, listener as EventListener, true));
         return () => {
             drawer.removeEventListener("click", close);
+            drawer.removeEventListener("contextmenu", menu);
             drawer.removeEventListener("pointerover", onHover);
             drawer.removeEventListener("mousedown", resize, true);
             drags.forEach(([type, listener]) => win.removeEventListener(type, listener as EventListener, true));

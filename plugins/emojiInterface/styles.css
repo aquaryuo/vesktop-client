@@ -1662,6 +1662,13 @@
     display: none;
 }
 
+.vc-ei-categories {
+    display: flex;
+    flex: 1 1 100%;
+    flex-direction: column;
+    gap: 6px;
+}
+
 .vc-ei-note {
     flex: 1 1 100%;
     color: var(--q-t2);
