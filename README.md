@@ -56,13 +56,26 @@ Your settings, themes and other plugins stay as they are. The script finds your 
 | Equibop | `Config/equibop/sessionData/equicord.asar` | `equibop.asar` |
 | Discord app with Equicord | `Config/Equicord/equicord.asar` | `desktop.asar` |
 
-On Linux the script also finds Vesktop and Equibop installed from Flatpak, under `~/.var/app/<app id>/config`. Equibop set to load Equicord from a custom folder is skipped. Equicord no longer makes a Vesktop build, so Vesktop always gets the Vencord build.
+On Linux the script also finds Vesktop and Equibop installed from Flatpak, under `~/.var/app/<app id>/config`. Equibop set to load Equicord from a custom folder is skipped, and so is Vesktop set to load a Vencord you built yourself (see [Built from source](#built-from-source)). Equicord no longer makes a Vesktop build, so Vesktop always gets the Vencord build.
 
 Updates come through the Updater page in Vencord or Equicord settings, the same as before, but from this repo. With automatic updates on, they install when the app starts.
 
 To go back, use Repair Vencord in Vesktop's tray menu or Repair Equicord in Equibop's, or run the Vencord or Equicord installer and pick Repair for the Discord app. Any of these also removes the plugins, so run the script again if you used one by mistake.
 
 </details>
+
+### Built from source
+
+If you build Vencord or Equicord yourself, for example with [BetterVencord](https://github.com/Davilarek/BetterVencordPatchset), the install script can't reach your build. It skips Vesktop set to load that build, and the Discord app keeps loading your build whatever the script replaces. Add the plugins to your build instead:
+
+1. Get this repo with Code > Download ZIP, or `git clone https://github.com/aquaryuo/vesktop-client`.
+2. Copy the folders `emojiInterface`, `fakePing`, `myCommands`, `optimizeThisShit` and `quote` from `plugins` into your build's userplugins folder:
+   - BetterVencord: `src/userplugins` in your BetterVencordPatchset folder. Its build deletes `dist`, so plugins copied there are lost.
+   - Vencord or Equicord from source: `src/userplugins` in your clone.
+3. Build again the way you usually do. For BetterVencord that's `pnpm dlx tsx scripts/build.ts`, adding `--equicord` for Equicord.
+4. Restart Discord or Vesktop and turn the plugins on in Settings.
+
+The plugins don't update by themselves in a build like this. To update them, copy the folders again and rebuild.
 
 ## Releases
 

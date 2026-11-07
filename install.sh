@@ -2,6 +2,8 @@
 set -eu
 
 release="https://github.com/aquaryuo/vesktop-client/releases/download/devbuild"
+guide="https://github.com/aquaryuo/vesktop-client#built-from-source"
+skipped=""
 
 if [ "$(id -u)" -eq 0 ]; then
     echo "Run this as your normal user, not with sudo."
@@ -37,6 +39,11 @@ vesktop() {
     [ -d "$1" ] || return 0
     files="$1/sessionData/vencordFiles"
     custom=$(state_value "$1/state.json" vencordDir)
+    if [ -n "$custom" ] && [ -f "$(dirname "$custom")/package.json" ] && [ -d "$(dirname "$custom")/src" ]; then
+        echo "Vesktop loads Vencord from a build you made yourself, so it was skipped. To add the plugins to it, see $guide"
+        skipped=1
+        return 0
+    fi
     [ -n "$custom" ] && files="$custom"
     [ -f "$files/vencordDesktopMain.js" ] || return 0
     for file in vencordDesktopMain.js vencordDesktopPreload.js vencordDesktopRenderer.js vencordDesktopRenderer.css; do
@@ -48,6 +55,7 @@ equibop() {
     [ -d "$1" ] || return 0
     if [ -n "$(state_value "$1/state.json" equicordDir)" ]; then
         echo "Equibop loads Equicord from a custom folder, so it was skipped."
+        skipped=1
         return 0
     fi
     [ -f "$1/sessionData/equicord.asar" ] || return 0
@@ -69,7 +77,7 @@ if [ -f "$config/Equicord/equicord.asar" ]; then
 fi
 
 if [ -z "$targets" ]; then
-    echo "No Vencord or Equicord install found. Install Vesktop, Equibop, or Vencord or Equicord for the Discord app, open it once, then run this again."
+    [ -n "$skipped" ] || echo "No Vencord or Equicord install found. Install Vesktop, Equibop, or Vencord or Equicord for the Discord app, open it once, then run this again. If you built Vencord yourself, for example with BetterVencord, see $guide"
     exit 1
 fi
 

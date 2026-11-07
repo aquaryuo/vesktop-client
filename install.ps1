@@ -3,16 +3,20 @@
     $ErrorActionPreference = "Stop"
     $ProgressPreference = "SilentlyContinue"
     $release = "https://github.com/aquaryuo/vesktop-client/releases/download/devbuild"
+    $guide = "https://github.com/aquaryuo/vesktop-client#built-from-source"
 
     $targets = @()
+    $skipped = $false
 
     $vesktopFiles = Join-Path $env:APPDATA "vesktop\sessionData\vencordFiles"
     $vesktopState = Join-Path $env:APPDATA "vesktop\state.json"
-    if (Test-Path $vesktopState) {
-        $custom = (Get-Content $vesktopState -Raw | ConvertFrom-Json).vencordDir
-        if ($custom) { $vesktopFiles = $custom }
-    }
-    if (Test-Path (Join-Path $vesktopFiles "vencordDesktopMain.js")) {
+    $custom = if (Test-Path $vesktopState) { (Get-Content $vesktopState -Raw | ConvertFrom-Json).vencordDir }
+    if ($custom) { $vesktopFiles = $custom.TrimEnd("\", "/") }
+    $source = Split-Path $vesktopFiles -Parent
+    if ($custom -and (Test-Path (Join-Path $source "package.json")) -and (Test-Path (Join-Path $source "src"))) {
+        Write-Host "Vesktop loads Vencord from a build you made yourself, so it was skipped. To add the plugins to it, see $guide"
+        $skipped = $true
+    } elseif (Test-Path (Join-Path $vesktopFiles "vencordDesktopMain.js")) {
         $targets += [pscustomobject]@{
             Name = "Vesktop"
             Files = "vencordDesktopMain.js", "vencordDesktopPreload.js", "vencordDesktopRenderer.js", "vencordDesktopRenderer.css" | ForEach-Object { , @($_, (Join-Path $vesktopFiles $_)) }
@@ -32,6 +36,7 @@
     $equibopCustom = (Test-Path $equibopState) -and (Get-Content $equibopState -Raw | ConvertFrom-Json).equicordDir
     if ($equibopCustom) {
         Write-Host "Equibop loads Equicord from a custom folder, so it was skipped."
+        $skipped = $true
     } elseif (Test-Path $equibopAsar) {
         $targets += [pscustomobject]@{ Name = "Equibop"; Files = , @("equibop.asar", $equibopAsar) }
     }
@@ -42,7 +47,7 @@
     }
 
     if (-not $targets) {
-        Write-Host "No Vencord or Equicord install found. Install Vesktop, Equibop, or Vencord or Equicord for the Discord app, open it once, then run this again."
+        if (-not $skipped) { Write-Host "No Vencord or Equicord install found. Install Vesktop, Equibop, or Vencord or Equicord for the Discord app, open it once, then run this again. If you built Vencord yourself, for example with BetterVencord, see $guide" }
         return
     }
 
