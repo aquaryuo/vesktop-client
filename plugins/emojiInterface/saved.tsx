@@ -1,11 +1,13 @@
 import { addGlobalContextMenuPatch, findGroupChildrenByChildId, GlobalContextMenuPatchCallback, NavContextMenuPatchCallback, removeGlobalContextMenuPatch } from "@api/ContextMenu";
 import * as DataStore from "@api/DataStore";
 import { copyWithToast, insertTextIntoChatInputBox, sendMessage } from "@utils/discord";
+import { openModal } from "@utils/modal";
 import { chooseFile, saveFile } from "@utils/web";
 import { CloudUpload as TCloudUpload } from "@vencord/discord-types";
 import { CloudUploadPlatform } from "@vencord/discord-types/enums";
 import { findByCodeLazy, findLazy } from "@webpack";
-import { ChannelStore, Constants, ContextMenuApi, EmojiStore, ExpressionPickerStore, FluxDispatcher, GuildStore, IconUtils, Menu, Modal, openModal, PermissionsBits, PermissionStore, React, RestAPI, SelectedChannelStore, showToast, SnowflakeUtils, StickersStore, UploadHandler, UserStore, useEffect, useMemo, useState } from "@webpack/common";
+import * as Common from "@webpack/common";
+import { ChannelStore, Constants, ContextMenuApi, EmojiStore, ExpressionPickerStore, FluxDispatcher, GuildStore, IconUtils, Menu, PermissionsBits, PermissionStore, React, RestAPI, SelectedChannelStore, showToast, SnowflakeUtils, StickersStore, UploadHandler, UserStore, useEffect, useMemo, useState } from "@webpack/common";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
 import { addGifFavorite, isGifFavorite, removeGifFavorite, settings, useParentClass, useStyle } from ".";
@@ -52,6 +54,7 @@ const SILENT = 1 << 12;
 
 const uploadEmoji = findByCodeLazy(".GUILD_EMOJIS(", "EMOJI_UPLOAD_START");
 const CloudUpload: typeof TCloudUpload = findLazy(m => m.prototype?.trackUploadFinished);
+const Modal: typeof Common.Modal = Common.Modal ?? findByCodeLazy("leadingLayout:", "actions:", ".message");
 
 let items: SavedItem[] = [];
 let loaded: Promise<void> | undefined;
