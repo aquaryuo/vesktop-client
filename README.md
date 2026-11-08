@@ -56,7 +56,7 @@ Your settings, themes and other plugins stay as they are. The script finds your 
 | Equibop | `Config/equibop/sessionData/equicord.asar` | `equibop.asar` |
 | Discord app with Equicord | `Config/Equicord/equicord.asar` | `desktop.asar` |
 
-On Linux the script also finds Vesktop and Equibop installed from Flatpak, under `~/.var/app/<app id>/config`. Equibop set to load Equicord from a custom folder is skipped, and so is Vesktop set to load a Vencord you built yourself (see [Built from source](#built-from-source)). Equicord no longer makes a Vesktop build, so Vesktop always gets the Vencord build.
+On Linux the script also finds Vesktop and Equibop installed from Flatpak, under `~/.var/app/<app id>/config`. A Vencord or Equicord you built yourself gets the plugins added to its source instead (see [Built from source](#built-from-source)). Equibop set to load Equicord from any other custom folder is skipped. Equicord no longer makes a Vesktop build, so Vesktop always gets the Vencord build.
 
 Updates come through the Updater page in Vencord or Equicord settings, the same as before, but from this repo. With automatic updates on, they install when the app starts.
 
@@ -66,7 +66,11 @@ To go back, use Repair Vencord in Vesktop's tray menu or Repair Equicord in Equi
 
 ### Built from source
 
-If you build Vencord or Equicord yourself, for example with [BetterVencord](https://github.com/Davilarek/BetterVencordPatchset), the install script can't reach your build. It skips Vesktop set to load that build, and the Discord app keeps loading your build whatever the script replaces. Add the plugins to your build instead:
+If you build Vencord or Equicord yourself, for example with [BetterVencord](https://github.com/Davilarek/BetterVencordPatchset), run the same command as above. The script finds your build through the Discord app or the Vencord Location set in Vesktop or Equibop. It copies the plugins into your source's `src/userplugins` folder (the patchset's own for BetterVencord) and builds it again: `pnpm dlx tsx scripts/build.ts` for BetterVencord, `pnpm build` for a Vencord or Equicord clone. This needs pnpm and takes a minute or two. If the build fails, your previous build is kept.
+
+The plugins don't update by themselves in a build like this. Run the command again to update them.
+
+To add them by hand instead:
 
 1. Get this repo with Code > Download ZIP, or `git clone https://github.com/aquaryuo/vesktop-client`.
 2. Copy the folders `emojiInterface`, `fakePing`, `myCommands`, `optimizeThisShit` and `quote` from `plugins` into your build's userplugins folder:
@@ -75,7 +79,7 @@ If you build Vencord or Equicord yourself, for example with [BetterVencord](http
 3. Build again the way you usually do. For BetterVencord that's `pnpm dlx tsx scripts/build.ts`, adding `--equicord` for Equicord.
 4. Restart Discord or Vesktop and turn the plugins on in Settings.
 
-The plugins don't update by themselves in a build like this. To update them, copy the folders again and rebuild.
+To update them by hand, copy the folders again and rebuild.
 
 ## Releases
 
