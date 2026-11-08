@@ -40,6 +40,22 @@ You need Vesktop, Equibop, or the Discord app with Vencord or Equicord, on Windo
 
 That's it. Updates install by themselves.
 
+### Uninstall
+
+Close the app the same way, then run this in PowerShell on Windows:
+
+```powershell
+irm https://raw.githubusercontent.com/aquaryuo/vesktop-client/main/uninstall.ps1 | iex
+```
+
+Or this in Terminal on macOS and Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aquaryuo/vesktop-client/main/uninstall.sh | sh
+```
+
+It removes only these plugins and puts back the build each app had before you installed them, which the install script saved. Installs from before 2026-11-08 have no saved copy, so they get the official Vencord or Equicord build instead. Your settings and other plugins stay. It also deletes Quote's font cache, and if the install script set up Discord to load Vencord or Equicord, it undoes that too.
+
 <br>
 
 <details>
@@ -56,19 +72,25 @@ Your settings, themes and other plugins stay as they are. The script finds your 
 | Equibop | `Config/equibop/sessionData/equicord.asar` | `equibop.asar` |
 | Discord app with Equicord | `Config/Equicord/equicord.asar` | `desktop.asar` |
 
+The first time, the script saves each file it replaces next to it as `<file>.before-plugins`, so uninstalling can put it back.
+
+If the Discord app has a Vencord or Equicord folder but isn't set up to load it, the script runs Vencord's or Equicord's own installer for Discord first. If Discord loads its client from somewhere else, that folder is left alone.
+
 On Linux the script also finds Vesktop and Equibop installed from Flatpak, under `~/.var/app/<app id>/config`. A Vencord or Equicord you built yourself gets the plugins added to its source instead (see [Built from source](#built-from-source)). Equibop set to load Equicord from any other custom folder is skipped. Equicord no longer makes a Vesktop build, so Vesktop always gets the Vencord build.
 
 Updates come through the Updater page in Vencord or Equicord settings, the same as before, but from this repo. With automatic updates on, they install when the app starts.
 
-To go back, use Repair Vencord in Vesktop's tray menu or Repair Equicord in Equibop's, or run the Vencord or Equicord installer and pick Repair for the Discord app. Any of these also removes the plugins, so run the script again if you used one by mistake.
+To go back, use the [uninstall](#uninstall) command. Repair Vencord in Vesktop's tray menu, Repair Equicord in Equibop's, or Repair in the Vencord or Equicord installer also remove the plugins, but they put the official build back instead of the one you had.
 
 </details>
 
 ### Built from source
 
-If you build Vencord or Equicord yourself, for example with [BetterVencord](https://github.com/Davilarek/BetterVencordPatchset), run the same command as above. The script finds your build through the Discord app or the Vencord Location set in Vesktop or Equibop. It copies the plugins into your source's `src/userplugins` folder (the patchset's own for BetterVencord) and builds it again: `pnpm dlx tsx scripts/build.ts` for BetterVencord, `pnpm build` for a Vencord or Equicord clone. This needs pnpm and takes a minute or two. If the build fails, your previous build is kept.
+If you build Vencord or Equicord yourself, for example with [BetterVencord](https://github.com/Davilarek/BetterVencordPatchset), run the same command as above. The script finds your build through the Discord app or the Vencord Location set in Vesktop or Equibop. It copies the plugins into the build's `src/userplugins` folder, and for BetterVencord also into the patchset's, so your own rebuilds keep them. Then it runs `pnpm build` in the build's folder (`dist/Vencord` for BetterVencord) with the packages already installed there, so nothing else in your build changes. This needs pnpm and takes about a minute. It keeps a copy of your build from before the plugins, which the uninstall command puts back. If the build fails, your previous build is kept.
 
 The plugins don't update by themselves in a build like this. Run the command again to update them.
+
+BetterVencord rebuilt with its own build script after 2026-11-04 gets `@zenfs/core` 2.9.0, which can't read the virtual filesystem that older versions saved, so its settings disappear. Until BetterVencord pins it, change `"@zenfs/core": "^2.5.6"` to `"@zenfs/core": "2.8.3"` in `src/patch-package_json.patch` and rebuild.
 
 To add them by hand instead:
 
