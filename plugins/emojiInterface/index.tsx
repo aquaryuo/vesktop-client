@@ -475,11 +475,24 @@ async function importFavorites() {
     return lines.join(" ");
 }
 
+let transfer = { status: "", broken: [] as string[], checking: false };
+const transferListeners = new Set<() => void>();
+
+function setTransfer(next: Partial<typeof transfer>) {
+    transfer = { ...transfer, ...next };
+    transferListeners.forEach(listener => listener());
+}
+
+const setStatus = (status: string) => setTransfer({ status });
+const setBroken = (broken: string[]) => setTransfer({ broken });
+const setChecking = (checking: boolean) => setTransfer({ checking });
+
 function Transfer() {
     useStyle();
-    const [status, setStatus] = useState("");
-    const [broken, setBroken] = useState<string[]>([]);
-    const [checking, setChecking] = useState(false);
+    const { status, broken, checking } = React.useSyncExternalStore(listener => {
+        transferListeners.add(listener);
+        return () => { transferListeners.delete(listener); };
+    }, () => transfer);
 
     async function check() {
         setBroken([]);
