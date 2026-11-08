@@ -2,7 +2,7 @@ import { definePluginSettings } from "@api/Settings";
 import { disableStyle, enableStyle } from "@api/Styles";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { classes } from "@utils/misc";
-import definePlugin, { OptionType } from "@utils/types";
+import definePlugin, { OptionType, PluginNative } from "@utils/types";
 import { chooseFile, saveFile } from "@utils/web";
 import { findStoreLazy } from "@webpack";
 import { ChannelStore, ContextMenuApi, EmojiStore, FluxDispatcher, GuildChannelStore, GuildStore, Menu, PermissionsBits, PermissionStore, React, showToast, UserSettingsActionCreators, UserStore, useEffect, useLayoutEffect, useMemo, useRef, useState } from "@webpack/common";
@@ -446,8 +446,8 @@ function handleDrop(target: DropTarget, transfer: DataTransfer) {
     const notify = (text: string) => text && showToast({ text });
     if (target === "downloads") target = isGifLike(file, link) ? "gif" : "emoji";
     if (target === "gif") {
-        if (file) addGifFile(file).then(notify);
-        else if (link) addGifLink(link).then(notify);
+        if (file) track(addGifFile(file)).then(notify);
+        else if (link) track(addGifLink(link)).then(notify);
         else notify("Drop a GIF file or link.");
         return;
     }
@@ -475,6 +475,45 @@ async function importFavorites() {
     return lines.join(" ");
 }
 
+const Native = VencordNative.pluginHelpers?.["Emoji Interface"] as PluginNative<typeof import("./native")> | undefined;
+
+let work = { jobs: 0, progress: -1 };
+let taskbar = -1;
+const workListeners = new Set<() => void>();
+
+function setWork(next: Partial<typeof work>) {
+    work = { ...work, ...next };
+    workListeners.forEach(listener => listener());
+    const value = !work.jobs ? -1 : work.progress < 0 ? 2 : Math.round(work.progress * 100) / 100;
+    if (value === taskbar) return;
+    taskbar = value;
+    Native?.setProgress(value).catch(() => { });
+}
+
+export function track<T>(job: Promise<T>) {
+    setWork({ jobs: work.jobs + 1 });
+    return job.finally(() => setWork({ jobs: work.jobs - 1 }));
+}
+
+function Progress() {
+    const { jobs, progress } = React.useSyncExternalStore(listener => {
+        workListeners.add(listener);
+        return () => { workListeners.delete(listener); };
+    }, () => work);
+    if (!jobs) return null;
+    const known = progress >= 0;
+    return (
+        <div
+            className="vc-ei-progress"
+            role="progressbar"
+            aria-label="Working"
+            aria-valuenow={known ? Math.round(progress * 100) : undefined}
+            data-indeterminate={known ? undefined : ""}
+            style={known ? { "--vc-ei-progress": progress } as React.CSSProperties : undefined}
+        />
+    );
+}
+
 let transfer = { status: "", broken: [] as string[], checking: false };
 const transferListeners = new Set<() => void>();
 
@@ -499,7 +538,10 @@ function Transfer() {
         if (!navigator.onLine) return setStatus("You're offline, so the GIFs can't be checked.");
         setChecking(true);
         try {
-            const result = await findBroken((done, total) => setStatus(`Checking ${done} of ${plural(total, "GIF")}.`));
+            const result = await track(findBroken((done, total) => {
+                setStatus(`Checking ${done} of ${plural(total, "GIF")}.`);
+                setWork({ progress: total ? done / total : -1 });
+            }));
             if (!result.total) setStatus("You have no favorite GIFs.");
             else if (!result.broken.length) setStatus("All your favorite GIFs load.");
             else if (result.broken.length === result.total && result.total >= 3) setStatus("None of your GIFs loaded. Check your connection and try again.");
@@ -510,6 +552,7 @@ function Transfer() {
         } catch {
             setStatus("Couldn't check the GIFs. Try again.");
         } finally {
+            setWork({ progress: -1 });
             setChecking(false);
         }
     }
@@ -517,7 +560,7 @@ function Transfer() {
     function remove() {
         const count = broken.length;
         setBroken([]);
-        removeGifs(broken).then(
+        track(removeGifs(broken)).then(
             () => setStatus(`Removed ${plural(count, "GIF")} that didn't load.`),
             () => setStatus("Couldn't remove them. Try again.")
         );
@@ -531,7 +574,7 @@ function Transfer() {
             </div>
             <div className="vc-ei-actions">
                 <button type="button" className="vc-ei-button" onClick={() => exportFavorites().then(setStatus, () => setStatus("Couldn't export the favorites. Try again."))}>Export</button>
-                <button type="button" className="vc-ei-button vc-ei-primary" onClick={() => importFavorites().then(setStatus, () => setStatus("Couldn't save the favorites. Try again."))}>Import</button>
+                <button type="button" className="vc-ei-button vc-ei-primary" onClick={() => track(importFavorites()).then(setStatus, () => setStatus("Couldn't save the favorites. Try again."))}>Import</button>
                 <button type="button" className="vc-ei-button" disabled={checking} onClick={check}>Check GIFs</button>
             </div>
             {status && <p className="vc-ei-status" role="status">{status}</p>}
@@ -1015,6 +1058,7 @@ function Frame({ onWidthDown, side }: { onWidthDown(e: ReactMouseEvent): void; s
             {view === "settings" && <Panel onReset={resetSize} />}
             {view === "saved" && <SavedPanel />}
             <div className="vc-ei-preview" aria-hidden="true"><span /></div>
+            <Progress />
         </>
     );
 }

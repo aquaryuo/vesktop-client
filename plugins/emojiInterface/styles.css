@@ -77,6 +77,43 @@
     pointer-events: none;
 }
 
+@property --vc-ei-progress {
+    syntax: "<number>";
+    inherits: false;
+    initial-value: 0;
+}
+
+.vc-ei-progress {
+    position: absolute;
+    inset: 0 16px auto;
+    z-index: 3;
+    height: 2px;
+    background: linear-gradient(to right, var(--q-accent) calc(var(--vc-ei-progress) * 100%), var(--q-line-strong) 0);
+    box-shadow: var(--q-glow);
+    pointer-events: none;
+    transition: --vc-ei-progress 200ms var(--q-ease);
+}
+
+.vc-ei-progress[data-indeterminate] {
+    background: linear-gradient(to right, transparent, var(--q-accent), transparent) 0 0 / 30% 100% no-repeat, var(--q-line-strong);
+    animation: vc-ei-sweep 1.2s linear infinite;
+}
+
+.reduce-motion .vc-ei-progress[data-indeterminate] {
+    background: var(--q-accent);
+    animation: none;
+}
+
+@keyframes vc-ei-sweep {
+    from {
+        background-position: -50% 0, 0 0;
+    }
+
+    to {
+        background-position: 150% 0, 0 0;
+    }
+}
+
 .vc-ei [class*="navButton_"],
 .vc-ei [class*="navButtonActive_"],
 .vc-ei-tab,

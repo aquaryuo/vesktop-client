@@ -10,7 +10,7 @@ import * as Common from "@webpack/common";
 import { ChannelStore, Constants, ContextMenuApi, EmojiStore, ExpressionPickerStore, FluxDispatcher, GuildStore, IconUtils, Menu, PermissionsBits, PermissionStore, React, RestAPI, SelectedChannelStore, showToast, SnowflakeUtils, StickersStore, UploadHandler, UserStore, useEffect, useMemo, useState } from "@webpack/common";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
-import { addGifFavorite, isGifFavorite, removeGifFavorite, settings, useParentClass, useStyle } from ".";
+import { addGifFavorite, isGifFavorite, removeGifFavorite, settings, track, useParentClass, useStyle } from ".";
 
 export type Kind = "emoji" | "sticker";
 export type ItemKind = Kind | "gif";
@@ -427,7 +427,7 @@ function CloneModal({ source }: { source: Source; }) {
         setBusy(guild.id);
         setStatus("");
         try {
-            await cloneTo(guild.id, source, name);
+            await track(cloneTo(guild.id, source, name));
             setStatus(`Cloned ${name} to ${guild.name}.`);
         } catch (e) {
             setStatus(`Couldn't clone to ${guild.name}: ${apiMessage(e)}.`);
@@ -561,7 +561,7 @@ function GifLinkModal({ onClose }: { onClose(): void; }) {
     async function add() {
         setBusy(true);
         setStatus("");
-        const text = await addGifLink(link.trim());
+        const text = await track(addGifLink(link.trim()));
         setBusy(false);
         if (text.startsWith("Added")) {
             showToast({ text });
@@ -591,7 +591,7 @@ function openGifLink() {
 
 async function openGifFile() {
     const file = await chooseFile("image/gif,image/webp,video/mp4,video/webm");
-    if (file) showToast({ text: await addGifFile(file) });
+    if (file) showToast({ text: await track(addGifFile(file)) });
 }
 
 export function PlusButton({ kind, onUpload, uploadDisabled }: { kind: ItemKind | "all"; onUpload?(): void; uploadDisabled?: boolean; }) {
