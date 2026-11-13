@@ -1,6 +1,6 @@
 import { definePluginSettings } from "@api/Settings";
 import definePlugin, { OptionType } from "@utils/types";
-import { ChannelStore, SelectedChannelStore } from "@webpack/common";
+import { ChannelStore, FluxDispatcher, SelectedChannelStore, UserStore } from "@webpack/common";
 
 import managedStyle from "./styles.css?managed";
 
@@ -46,6 +46,22 @@ function watchLayers() {
         }
     }
     return true;
+}
+
+const SELF_ACTIONS = new Set(["CONNECTION_OPEN", "CURRENT_USER_UPDATE", "UPDATE_CLIENT_PREMIUM_TYPE", "USER_RESTRICTED_SCHEDULE_UPDATE"]);
+const PROFILE_FIELDS = ["accent_color", "banner", "bio", "pronouns", "popout_animation_particle_type", "theme_colors", "collectibles"];
+const SAVED_FOR = 120_000;
+let savedProfile: { at: number; fields: Record<string, unknown>; } | undefined;
+
+function keepSavedProfile(action: any) {
+    const self = UserStore.getCurrentUser()?.id;
+    if (action.type === "USER_PROFILE_UPDATE_SUCCESS" && action.userId === self && action.guild_id == null) {
+        savedProfile = { at: Date.now(), fields: Object.fromEntries(PROFILE_FIELDS.filter(key => key in action).map(key => [key, action[key]])) };
+    } else if (action.type === "USER_PROFILE_FETCH_SUCCESS" && savedProfile && action.userProfile?.user?.id === self && action.userProfile.user_profile) {
+        if (Date.now() - savedProfile.at > SAVED_FOR) savedProfile = undefined;
+        else Object.assign(action.userProfile.user_profile, savedProfile.fields);
+    }
+    return false;
 }
 
 const DEBUG = /\.highlight-mana-/;
@@ -206,7 +222,7 @@ function cleanNode(node: Node) {
 
 export default definePlugin({
     name: "Optimize This S**t",
-    description: "Makes Discord cheaper to draw without changing how it looks: removes design-debug styles it ships to everyone, drops GPU-layer tricks from its CSS, stops hidden chat separators from getting layers of their own, and makes menus open faster: they no longer restyle the whole app, and emoji menus no longer rebuild Discord's emoji list.",
+    description: "Makes Discord cheaper to draw without changing how it looks: removes design-debug styles it ships to everyone, drops GPU-layer tricks from its CSS, stops hidden chat separators from getting layers of their own, and makes menus open faster: they no longer restyle the whole app, and emoji menus no longer rebuild Discord's emoji list. Also stops your avatar and banner from flicking back to the old ones after you change them.",
     authors: [{ name: "aquaryuo", id: 975151124824879125n }],
     enabledByDefault: true,
     managedStyle,
@@ -225,6 +241,19 @@ export default definePlugin({
                     replace: "(0,$1)($self.emojiGuild(),$2)"
                 }
             ]
+        },
+        {
+            find: 'displayName="UserStore"',
+            replacement: [
+                {
+                    match: /function \i\((\i)\){(?=let \i,\i=!\(arguments\.length>1\)\|\|void 0===arguments\[1\]\|\|arguments\[1\],\i=\i\[\1\.id\])/,
+                    replace: "$&if($self.foreignSelf($1))return!1;"
+                },
+                {
+                    match: /(let (\i)=\i\[(\i)\.user\.id\];if\(null==\2)\)return!1;/,
+                    replace: "$1||$self.foreignSelf($3.user))return!1;"
+                }
+            ]
         }
     ],
 
@@ -232,7 +261,12 @@ export default definePlugin({
         return ChannelStore.getChannel(SelectedChannelStore.getChannelId())?.getGuildId() ?? null;
     },
 
+    foreignSelf(user?: { id?: string; }) {
+        return user?.id != null && user.id === UserStore.getCurrentUser()?.id && !SELF_ACTIONS.has((FluxDispatcher as any)._currentDispatchActionType);
+    },
+
     start() {
+        FluxDispatcher.addInterceptor(keepSavedProfile);
         for (const sheet of document.styleSheets) clean(sheet);
         observer = new MutationObserver(records => records.forEach(record => record.addedNodes.forEach(cleanNode)));
         observer.observe(document.head, { childList: true });
@@ -241,6 +275,9 @@ export default definePlugin({
     },
 
     stop() {
+        const interceptors: unknown[] = FluxDispatcher._interceptors;
+        if (interceptors.includes(keepSavedProfile)) interceptors.splice(interceptors.indexOf(keepSavedProfile), 1);
+        savedProfile = undefined;
         observer?.disconnect();
         observer = undefined;
         clearInterval(findTimer);
