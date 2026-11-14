@@ -1,6 +1,6 @@
 import { definePluginSettings } from "@api/Settings";
 import definePlugin, { OptionType } from "@utils/types";
-import { ChannelStore, FluxDispatcher, SelectedChannelStore, UserStore } from "@webpack/common";
+import { ChannelStore, Constants, FluxDispatcher, RestAPI, SelectedChannelStore, UserStore } from "@webpack/common";
 
 import managedStyle from "./styles.css?managed";
 
@@ -49,6 +49,18 @@ function watchLayers() {
 }
 
 const SELF_ACTIONS = new Set(["CONNECTION_OPEN", "CURRENT_USER_UPDATE", "UPDATE_CLIENT_PREMIUM_TYPE", "USER_RESTRICTED_SCHEDULE_UPDATE"]);
+const SELF_FIELDS = [["avatar", "avatar"], ["banner", "banner"], ["global_name", "globalName"], ["username", "username"]] as const;
+const REFRESH_GAP = 10_000;
+let refreshedAt = 0;
+
+function refreshSelf() {
+    if (Date.now() - refreshedAt < REFRESH_GAP) return;
+    refreshedAt = Date.now();
+    RestAPI.get({ url: Constants.Endpoints.ME }).then(
+        ({ body }) => FluxDispatcher.dispatch({ type: "CURRENT_USER_UPDATE", user: body }),
+        () => { }
+    );
+}
 const PROFILE_FIELDS = ["accent_color", "banner", "bio", "pronouns", "popout_animation_particle_type", "theme_colors", "collectibles"];
 const SAVED_FOR = 120_000;
 let savedProfile: { at: number; fields: Record<string, unknown>; } | undefined;
@@ -261,8 +273,11 @@ export default definePlugin({
         return ChannelStore.getChannel(SelectedChannelStore.getChannelId())?.getGuildId() ?? null;
     },
 
-    foreignSelf(user?: { id?: string; }) {
-        return user?.id != null && user.id === UserStore.getCurrentUser()?.id && !SELF_ACTIONS.has((FluxDispatcher as any)._currentDispatchActionType);
+    foreignSelf(user?: Record<string, any>) {
+        const me: Record<string, any> | undefined = UserStore.getCurrentUser();
+        if (user?.id == null || user.id !== me?.id || SELF_ACTIONS.has((FluxDispatcher as any)._currentDispatchActionType)) return false;
+        if (SELF_FIELDS.some(([wire, local]) => wire in user && (user[wire] ?? null) !== (me[local] ?? null))) refreshSelf();
+        return true;
     },
 
     start() {
@@ -278,6 +293,7 @@ export default definePlugin({
         const interceptors: unknown[] = FluxDispatcher._interceptors;
         if (interceptors.includes(keepSavedProfile)) interceptors.splice(interceptors.indexOf(keepSavedProfile), 1);
         savedProfile = undefined;
+        refreshedAt = 0;
         observer?.disconnect();
         observer = undefined;
         clearInterval(findTimer);
