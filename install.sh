@@ -109,13 +109,18 @@ equibop() {
 }
 
 discord() {
-    [ -f "$1" ] || return 0
+    [ -e "$1" ] || return 0
     case "$1" in
         *.app/Contents/Resources/app.asar) location=${1%/Contents/Resources/app.asar} ;;
         *) location=$(dirname "$(dirname "$1")") ;;
     esac
     patcher=""
-    [ "$(wc -c < "$1" | tr -d ' ')" -lt 65536 ] && patcher=$(LC_ALL=C grep -ao 'require("[^"]*")' "$1" | head -n 1 | sed 's/^require("//; s/")$//; s/\\\\/\\/g')
+    stub=$1
+    [ ! -d "$1" ] || stub="$1/index.js"
+    if [ -f "$stub" ] && { [ -d "$1" ] || [ "$(wc -c < "$1" | tr -d ' ')" -lt 65536 ]; }; then
+        patcher=$(LC_ALL=C grep -ao 'require("[^"]*")' "$stub" | head -n 1 | sed 's/^require("//; s/")$//; s/\\\\/\\/g')
+    fi
+    [ -n "$patcher" ] || [ ! -d "$1" ] || patcher=$1
     discords="$discords$location|$patcher
 "
     case "$patcher" in
@@ -169,12 +174,97 @@ plan_inject() {
     fi
 }
 
-if [ -z "$uninstall" ] && [ -n "$discords" ]; then
-    plan_inject "Discord with Vencord" "$config/Vencord/dist/patcher.js"
-    inject_vencord=$inject_list
-    plan_inject "Discord with Equicord" "$config/Equicord/equicord.asar"
-    inject_equicord=$inject_list
-fi
+apps_of() {
+    printf '%s' "$builds" | awk -F'|' -v r="$1" '$1 == r { print $2 }' | sort -u | paste -sd, - | sed 's/,/ and /g'
+}
+
+pick() {
+    items=$(printf '%s' "$targets" | cut -d'|' -f1 | awk 'NF && !seen[$0]++ { print "t|" $0 "|" $0 }')
+    roots=$(printf '%s' "$builds" | cut -d'|' -f1 | awk 'NF && !seen[$0]++')
+    if [ -n "$roots" ]; then
+        items="$items${items:+
+}$(printf '%s\n' "$roots" | while IFS= read -r root; do printf 'b|%s|%s (your own build)\n' "$root" "$(apps_of "$root")"; done)"
+    fi
+    n=$(printf '%s\n' "$items" | wc -l | tr -d ' ')
+    flags=$(printf "%${n}s" "" | tr ' ' 1)
+    if [ -t 1 ] && { stty -g < /dev/tty; } > /dev/null 2>&1; then
+        esc=$(printf '\033')
+        if [ -n "$uninstall" ]; then verb=uninstall; prompt="Pick the apps to remove the plugins from:"; else verb=install; prompt="Pick the apps to add the plugins to:"; fi
+        printf '\n'
+        awk -v b="$esc[96m" -v d="$esc[36m" -v r="$esc[0m" '{ gsub(/(█)+/, b "&" d); print d $0 r }' <<'EOF'
+  ██████╗  ██╗   ██╗ ██╗   ██╗  ██████╗      ████████╗  ██████╗
+  ██╔══██╗ ╚██╗ ██╔╝ ██║   ██║ ██╔═══██╗     ╚══██╔══╝ ██╔═══██╗
+  ██████╔╝  ╚████╔╝  ██║   ██║ ██║   ██║        ██║    ██║   ██║
+  ██╔══██╗   ╚██╔╝   ██║   ██║ ██║   ██║        ██║    ██║   ██║
+  ██║  ██║    ██║    ╚██████╔╝ ╚██████╔╝ ██╗    ██║    ╚██████╔╝
+  ╚═╝  ╚═╝    ╚═╝     ╚═════╝   ╚═════╝  ╚═╝    ╚═╝     ╚═════╝
+EOF
+        printf '\n  \033[90m%s\033[0m\n\n  %s\n\n' "Plugins for Vencord and Equicord" "$prompt"
+        old=$(stty -g < /dev/tty)
+        trap 'stty "$old" < /dev/tty; printf "\033[?25h\n"; exit 130' INT TERM
+        stty -icanon -echo min 1 time 0 < /dev/tty
+        printf '\033[?25l'
+        cursor=1
+        notice=""
+        drawn=""
+        cancelled=""
+        while :; do
+            [ -z "$drawn" ] || printf '\r\033[%dA' "$((n + 1))"
+            drawn=1
+            printf '%s\n' "$items" | cut -d'|' -f3- | {
+                i=1
+                while IFS= read -r label; do
+                    if [ "$i" -eq "$cursor" ]; then mark=">"; color=96; else mark=" "; color=0; fi
+                    if [ "$(printf '%s' "$flags" | cut -c"$i")" = 1 ]; then box="\033[32m[x]"; else box="\033[90m[ ]"; fi
+                    printf "\r\033[2K\033[%sm  %s $box\033[%sm %s\033[0m\n" "$color" "$mark" "$color" "$label"
+                    i=$((i + 1))
+                done
+            }
+            printf '\r\033[2K\n'
+            if [ -n "$notice" ]; then
+                printf '\r\033[2K  \033[33m%s\033[0m' "$notice"
+            else
+                printf '\r\033[2K  \033[90m%s\033[0m' "Up and Down to move, Space to pick, Enter to $verb, Esc to cancel"
+            fi
+            notice=""
+            key=$(dd bs=3 count=1 2> /dev/null < /dev/tty || :)
+            case "$key" in
+                "$esc[A" | "${esc}OA") cursor=$((cursor > 1 ? cursor - 1 : n)) ;;
+                "$esc[B" | "${esc}OB") cursor=$((cursor < n ? cursor + 1 : 1)) ;;
+                "$esc") cancelled=1; break ;;
+                " ")
+                    bit=1
+                    [ "$(printf '%s' "$flags" | cut -c"$cursor")" = 0 ] || bit=0
+                    flags=$(printf '%s' "$flags" | sed "s/./$bit/$cursor") ;;
+                "")
+                    case "$flags" in *1*) break ;; esac
+                    notice="Pick at least one app, or press Esc to cancel." ;;
+            esac
+        done
+        stty "$old" < /dev/tty
+        trap - INT TERM
+        printf '\033[?25h\n\n'
+        if [ -n "$cancelled" ]; then
+            echo "Nothing was changed."
+            exit 0
+        fi
+    fi
+    i=1
+    while IFS='|' read -r kind key label; do
+        if [ "$(printf '%s' "$flags" | cut -c"$i")" = 0 ]; then
+            if [ "$kind" = t ]; then
+                drop "$key"
+            else
+                builds=$(printf '%s' "$builds" | awk -F'|' -v r="$key" 'NF && $1 != r')
+                [ -z "$builds" ] || builds="$builds
+"
+            fi
+        fi
+        i=$((i + 1))
+    done <<EOF
+$items
+EOF
+}
 
 if [ -z "$targets" ] && [ -z "$builds" ]; then
     if [ -n "$uninstall" ]; then
@@ -185,14 +275,35 @@ if [ -z "$targets" ] && [ -z "$builds" ]; then
     exit 1
 fi
 
+pick
+
+if [ -z "$uninstall" ] && [ -n "$discords" ]; then
+    plan_inject "Discord with Vencord" "$config/Vencord/dist/patcher.js"
+    inject_vencord=$inject_list
+    plan_inject "Discord with Equicord" "$config/Equicord/equicord.asar"
+    inject_equicord=$inject_list
+fi
+
+[ -n "$targets$builds" ] || exit 1
+
 if [ -n "$builds" ] && ! command -v pnpm > /dev/null 2>&1; then
     echo "You use a Vencord you built yourself, and rebuilding it needs pnpm. Install pnpm, then run this again."
     exit 1
 fi
 
-if command -v pgrep > /dev/null 2>&1 && pgrep -ix 'vesktop|equibop|discord|discordptb|discordcanary|discord ptb|discord canary' > /dev/null 2>&1; then
-    echo "Quit Vesktop, Equibop and Discord first, then run this again."
-    exit 1
+if command -v pgrep > /dev/null 2>&1; then
+    chosen=$(printf '%s' "$targets" | cut -d'|' -f1; printf '%s' "$builds" | cut -d'|' -f2)
+    running=""
+    for app in Vesktop Equibop Discord; do
+        case "$chosen" in *"$app"*) ;; *) continue ;; esac
+        pattern=$app
+        [ "$app" != Discord ] || pattern='discord|discordptb|discordcanary|discord ptb|discord canary'
+        if pgrep -ix "$pattern" > /dev/null 2>&1; then running="$running${running:+ and }$app"; fi
+    done
+    if [ -n "$running" ]; then
+        echo "Quit $running first, then run this again."
+        exit 1
+    fi
 fi
 
 temp=$(mktemp -d)
@@ -320,7 +431,7 @@ plugins="$temp/vesktop-client-main/plugins"
 
 printf '%s' "$builds" | cut -d'|' -f1 | sort -u | while IFS= read -r root; do
     [ -n "$root" ] || continue
-    apps=$(printf '%s' "$builds" | awk -F'|' -v r="$root" '$1 == r { print $2 }' | sort -u | paste -sd, - | sed 's/,/ and /g')
+    apps=$(apps_of "$root")
     patchset=$(dirname "$(dirname "$root")")
     folders="$root/src/userplugins"
     betterVencord=""

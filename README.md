@@ -22,7 +22,7 @@ You need Vesktop, Equibop, or the Discord app with Vencord or Equicord, on Windo
    irm https://raw.githubusercontent.com/aquaryuo/vesktop-client/main/install.ps1 | iex
    ```
 
-4. Wait until it says `installed`, then open it again.
+4. Pick the apps with the arrow keys and Space, then press Enter. Wait until it says `installed`, then open it again.
 5. Open Settings (the cog at the bottom left), go to Plugins under Vencord or Equicord, and turn on the ones you want.
 
 ### macOS and Linux
@@ -35,7 +35,7 @@ You need Vesktop, Equibop, or the Discord app with Vencord or Equicord, on Windo
    curl -fsSL https://raw.githubusercontent.com/aquaryuo/vesktop-client/main/install.sh | sh
    ```
 
-4. Wait until it says `installed`, then open it again.
+4. Pick the apps with the arrow keys and Space, then press Enter. Wait until it says `installed`, then open it again.
 5. Open Settings (the cog at the bottom left), go to Plugins under Vencord or Equicord, and turn on the ones you want.
 
 That's it. Updates install by themselves.
@@ -54,7 +54,7 @@ Or this in Terminal on macOS and Linux:
 curl -fsSL https://raw.githubusercontent.com/aquaryuo/vesktop-client/main/uninstall.sh | sh
 ```
 
-It removes only these plugins and puts back the build each app had before you installed them, which the install script saved. Installs from before 2026-11-08 have no saved copy, so they get the official Vencord or Equicord build instead. Your settings and other plugins stay. It also deletes Quote's font cache, and if the install script set up Discord to load Vencord or Equicord, it undoes that too.
+It asks which apps to remove them from. It removes only these plugins and puts back the build each app had before you installed them, which the install script saved. Installs from before 2026-11-08 have no saved copy, so they get the official Vencord or Equicord build instead. Your settings and other plugins stay. It also deletes Quote's font cache, and if the install script set up Discord to load Vencord or Equicord, it undoes that too.
 
 <br>
 

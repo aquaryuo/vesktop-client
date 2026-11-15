@@ -69,10 +69,12 @@
         $asar = if ($app) { Get-Item -Path (Join-Path $app.FullName "resources\app.asar") -ErrorAction SilentlyContinue }
         if (-not $asar) { continue }
         $loads = $null
-        if ($asar.Length -le 65536) {
-            $match = [regex]::Match([IO.File]::ReadAllText($asar.FullName), 'require\(("(?:[^"\\]|\\.)*")\)')
+        $stub = if ($asar.PSIsContainer) { Join-Path $asar.FullName "index.js" } elseif ($asar.Length -le 65536) { $asar.FullName }
+        if ($stub -and (Test-Path -LiteralPath $stub -PathType Leaf)) {
+            $match = [regex]::Match([IO.File]::ReadAllText($stub), 'require\(("(?:[^"\\]|\\.)*")\)')
             if ($match.Success) { $loads = $match.Groups[1].Value | ConvertFrom-Json }
         }
+        if (-not $loads -and $asar.PSIsContainer) { $loads = $asar.FullName }
         $discords += [pscustomobject]@{ Location = $branch.FullName; Loads = $loads }
         if ($loads -and (Split-Path $loads -Leaf) -eq "patcher.js") { [void](Add-Build (Split-Path $loads -Parent) $branch.Name) }
     }
@@ -90,6 +92,82 @@
 
     Add-Target "Discord with Equicord" (, @("desktop.asar", (Join-Path $env:APPDATA "Equicord\equicord.asar"))) (Join-Path $env:APPDATA "Equicord") "https://github.com/Equicord/Equilotl/releases/latest/download/EquilotlCli.exe" "EQUICORD_USER_DATA_DIR"
 
+    if (-not $targets.Count -and -not $builds.Count) {
+        if ($uninstall) { Write-Host "None of your apps have these plugins, so there's nothing to uninstall." }
+        elseif (-not $skipped) { Write-Host "No Vencord or Equicord install found. Install Vesktop, Equibop, or Vencord or Equicord for the Discord app, open it once, then run this again. If you built Vencord yourself, see $guide" }
+        return
+    }
+
+    $items = @($targets | ForEach-Object { $_.Name }) + @($builds.Keys | ForEach-Object { "$($builds[$_] -join ' and ') (your own build)" })
+    $picked = @($items | ForEach-Object { $true })
+    if (-not [Console]::IsInputRedirected -and $Host.Name -eq "ConsoleHost") {
+        $banner = @(
+            "  ██████╗  ██╗   ██╗ ██╗   ██╗  ██████╗      ████████╗  ██████╗",
+            "  ██╔══██╗ ╚██╗ ██╔╝ ██║   ██║ ██╔═══██╗     ╚══██╔══╝ ██╔═══██╗",
+            "  ██████╔╝  ╚████╔╝  ██║   ██║ ██║   ██║        ██║    ██║   ██║",
+            "  ██╔══██╗   ╚██╔╝   ██║   ██║ ██║   ██║        ██║    ██║   ██║",
+            "  ██║  ██║    ██║    ╚██████╔╝ ╚██████╔╝ ██╗    ██║    ╚██████╔╝",
+            "  ╚═╝  ╚═╝    ╚═╝     ╚═════╝   ╚═════╝  ╚═╝    ╚═╝     ╚═════╝"
+        )
+        Write-Host ""
+        foreach ($line in $banner) {
+            foreach ($run in [regex]::Matches($line, "█+|[^█]+")) {
+                Write-Host $run.Value -NoNewline -ForegroundColor $(if ($run.Value[0] -eq "█") { "Cyan" } else { "DarkCyan" })
+            }
+            Write-Host ""
+        }
+        Write-Host ""
+        Write-Host "  Plugins for Vencord and Equicord" -ForegroundColor DarkGray
+        Write-Host ""
+        if ($uninstall) { Write-Host "  Pick the apps to remove the plugins from:" } else { Write-Host "  Pick the apps to add the plugins to:" }
+        Write-Host ""
+        $verb = if ($uninstall) { "uninstall" } else { "install" }
+        $width = [Console]::WindowWidth - 1
+        $cursor = 0
+        $top = -1
+        $notice = $null
+        $done = $false
+        $cancelled = $false
+        [Console]::CursorVisible = $false
+        try {
+            while (-not $done) {
+                if ($top -ge 0) { [Console]::SetCursorPosition(0, $top) }
+                for ($i = 0; $i -lt $items.Count; $i++) {
+                    $color = if ($i -eq $cursor) { "Cyan" } else { "Gray" }
+                    Write-Host $(if ($i -eq $cursor) { "  > " } else { "    " }) -NoNewline -ForegroundColor $color
+                    if ($picked[$i]) { Write-Host "[x]" -NoNewline -ForegroundColor Green } else { Write-Host "[ ]" -NoNewline -ForegroundColor DarkGray }
+                    Write-Host " $($items[$i])".PadRight($width - 7) -ForegroundColor $color
+                }
+                Write-Host ""
+                if ($notice) { Write-Host "  $notice".PadRight($width) -NoNewline -ForegroundColor Yellow }
+                else { Write-Host "  Up and Down to move, Space to pick, Enter to $verb, Esc to cancel".PadRight($width) -NoNewline -ForegroundColor DarkGray }
+                if ($top -lt 0) { $top = [Console]::CursorTop - $items.Count - 1 }
+                $notice = $null
+                switch ([Console]::ReadKey($true).Key) {
+                    "UpArrow" { $cursor = ($cursor + $items.Count - 1) % $items.Count }
+                    "DownArrow" { $cursor = ($cursor + 1) % $items.Count }
+                    "Spacebar" { $picked[$cursor] = -not $picked[$cursor] }
+                    "Enter" { if ($picked -contains $true) { $done = $true } else { $notice = "Pick at least one app, or press Esc to cancel." } }
+                    "Escape" { $done = $true; $cancelled = $true }
+                }
+            }
+        } finally {
+            [Console]::CursorVisible = $true
+            Write-Host ""
+            Write-Host ""
+        }
+        if ($cancelled) {
+            Write-Host "Nothing was changed."
+            return
+        }
+    }
+    $count = $targets.Count
+    $keys = @($builds.Keys)
+    for ($i = $items.Count - 1; $i -ge 0; $i--) {
+        if ($picked[$i]) { continue }
+        if ($i -lt $count) { $targets.RemoveAt($i) } else { $builds.Remove($keys[$i - $count]) }
+    }
+
     if (-not $uninstall -and $discords) {
         foreach ($target in @($targets | Where-Object { $_.Cli })) {
             $main = $target.Files[0][1]
@@ -106,11 +184,7 @@
         }
     }
 
-    if (-not $targets.Count -and -not $builds.Count) {
-        if ($uninstall) { Write-Host "None of your apps have these plugins, so there's nothing to uninstall." }
-        elseif (-not $skipped) { Write-Host "No Vencord or Equicord install found. Install Vesktop, Equibop, or Vencord or Equicord for the Discord app, open it once, then run this again. If you built Vencord yourself, see $guide" }
-        return
-    }
+    if (-not $targets.Count -and -not $builds.Count) { return }
 
     $pnpm = Get-Command pnpm.cmd, pnpm.exe, pnpm -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($builds.Count -and -not $pnpm) {
@@ -118,8 +192,15 @@
         return
     }
 
-    if (Get-Process -Name Vesktop, Equibop, Discord, DiscordPTB, DiscordCanary, DiscordDevelopment -ErrorAction SilentlyContinue) {
-        Write-Host "Quit Vesktop, Equibop and Discord first, including from the system tray, then run this again."
+    $chosen = @($targets | ForEach-Object { $_.Name }) + @($builds.Values | ForEach-Object { $_ })
+    $running = @()
+    foreach ($app in "Vesktop", "Equibop", "Discord") {
+        if (-not ($chosen -match $app)) { continue }
+        $names = if ($app -eq "Discord") { "Discord", "DiscordPTB", "DiscordCanary", "DiscordDevelopment" } else { $app }
+        if (Get-Process -Name $names -ErrorAction SilentlyContinue) { $running += $app }
+    }
+    if ($running) {
+        Write-Host "Quit $($running -join ' and ') first, including from the system tray, then run this again."
         return
     }
 
