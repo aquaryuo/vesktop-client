@@ -171,7 +171,7 @@
     if (-not $uninstall -and $discords) {
         foreach ($target in @($targets | Where-Object { $_.Cli })) {
             $main = $target.Files[0][1]
-            if ($discords | Where-Object { $_.Loads -eq $main }) { continue }
+            if ($discords | Where-Object { $_.Loads -eq $main -or "$($_.Loads)".StartsWith("$main\", [StringComparison]::OrdinalIgnoreCase) }) { continue }
             $free = @($discords | Where-Object { -not $_.Loads })
             if ($free.Count -eq $discords.Count) {
                 $target.Inject = @($free.Location)

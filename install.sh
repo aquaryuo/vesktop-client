@@ -159,7 +159,7 @@ drop() {
 plan_inject() {
     inject_list=""
     case "$targets" in *"$1|"*) ;; *) return 0 ;; esac
-    if printf '%s' "$discords" | awk -F'|' -v p="$2" '$2 == p { f = 1 } END { exit !f }'; then
+    if printf '%s' "$discords" | awk -F'|' -v p="$2" '$2 == p || index($2, p "/") == 1 { f = 1 } END { exit !f }'; then
         return 0
     fi
     if printf '%s' "$discords" | awk -F'|' 'NF && $2 != "" { f = 1 } END { exit f }'; then
