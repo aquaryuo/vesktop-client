@@ -72,7 +72,7 @@
         $stub = if ($asar.PSIsContainer) { Join-Path $asar.FullName "index.js" } elseif ($asar.Length -le 65536) { $asar.FullName }
         if ($stub -and (Test-Path -LiteralPath $stub -PathType Leaf)) {
             $match = [regex]::Match([IO.File]::ReadAllText($stub), 'require\(("(?:[^"\\]|\\.)*")\)')
-            if ($match.Success) { $loads = $match.Groups[1].Value | ConvertFrom-Json }
+            if ($match.Success) { $loads = ($match.Groups[1].Value | ConvertFrom-Json) -replace '/', '\' }
         }
         if (-not $loads -and $asar.PSIsContainer) { $loads = $asar.FullName }
         $discords += [pscustomobject]@{ Location = $branch.FullName; Loads = $loads }
@@ -177,7 +177,7 @@
                 $target.Inject = @($free.Location)
                 foreach ($discord in $free) { $discord.Loads = $main }
             } else {
-                Write-Host "$($target.Name): Discord loads its client from somewhere else, so $(Split-Path $main) was left alone."
+                Write-Host "$($target.Name): Discord loads $(@($discords | Where-Object { $_.Loads } | ForEach-Object { $_.Loads } | Sort-Object -Unique) -join ', ') instead, so $(Split-Path $main) was left alone."
                 [void]$targets.Remove($target)
                 $skipped = $true
             }

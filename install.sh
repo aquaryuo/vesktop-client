@@ -168,7 +168,7 @@ plan_inject() {
         discords="$discords
 "
     else
-        echo "$1: Discord loads its client from somewhere else, so $(dirname "$2") was left alone."
+        echo "$1: Discord loads $(printf '%s' "$discords" | awk -F'|' 'NF && $2 != "" { print $2 }' | sort -u | paste -sd, - | sed 's/,/, /g') instead, so $(dirname "$2") was left alone."
         drop "$1"
         skipped=1
     fi
