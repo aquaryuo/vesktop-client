@@ -298,25 +298,31 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
         });
     };
 
-    const replySize = 20;
-    const replyPad = 14;
-    const replyPic = 48;
-    const replyX = inner.x + replyPad + (reply?.avatar ? replyPic + replyPad : 0);
-    const replyW = inner.x + inner.w - replyPad - (reply?.image ? replyPic + replyPad : 0) - replyX;
+    const media = [...style.stickers ? content.stickers : [], ...style.images ? content.images : []];
+    const replyPad = 16;
+    const replyPic = 64;
+    const replyEnds = replyPad * 2 + (reply?.avatar ? replyPic + replyPad : 0) + (reply?.image ? replyPic + replyPad : 0);
+    const replyCap = !style.vertical ? 118 : media.length ? 60 : 88;
+    let replySize = 30;
     let replyName = "";
     let replyLines: string[] = [];
-    if (reply) {
+    let replyWidth = 0;
+    while (reply) {
         ctx.font = fontSpec(family, replySize, true, false);
-        [replyName] = clip(wrap(reply.name, replyW, s => ctx.measureText(s).width), 1);
+        [replyName] = clip(wrap(reply.name, inner.w - replyEnds, s => ctx.measureText(s).width), 1);
+        replyWidth = ctx.measureText(replyName).width;
         ctx.font = fontSpec(family, replySize, false, false);
-        replyLines = clip(wrap(replyText, replyW, s => span(s, replySize)), style.vertical ? 1 : 2);
+        replyLines = wrap(replyText, inner.w - replyEnds, s => span(s, replySize));
+        if ((replyLines.length + 1) * replySize * 1.3 <= replyCap || replySize <= 22) break;
+        replySize -= 2;
     }
+    replyLines = clip(replyLines, Math.floor(replyCap / (replySize * 1.3)) - 1);
+    replyWidth = replyEnds + Math.max(replyWidth, ...replyLines.map(s => span(s, replySize)));
     const replyTextHeight = (replyLines.length + 1) * replySize * 1.3;
     const replyHeight = reply ? Math.max(replyPic, replyTextHeight) + replyPad * 2 : 0;
     const above = reply ? replyHeight + gap : 0;
     const room = inner.h - footer - gap - header - above;
 
-    const media = [...style.stickers ? content.stickers : [], ...style.images ? content.images : []];
     const ratio = media.reduce((sum, m) => sum + m.width / m.height, 0);
     const textRoom = media.length ? room * 0.6 - gap : room;
     const jumbo = !text.replace(EMOJI, "").replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}\p{Join_Control}\p{Variation_Selector}\s]/gu, "");
@@ -343,22 +349,24 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
     ctx.textBaseline = "top";
     if (reply) {
         const middle = y + replyHeight / 2;
+        const left = centerX - replyWidth / 2;
+        const textX = left + replyPad + (reply.avatar ? replyPic + replyPad : 0);
         ctx.fillStyle = fg + "1f";
         ctx.beginPath();
-        ctx.roundRect(inner.x, y, inner.w, replyHeight, 12);
+        ctx.roundRect(left, y, replyWidth, replyHeight, 16);
         ctx.fill();
         ctx.filter = style.color ? "none" : "grayscale(1)";
-        if (reply.avatar) tile(ctx, reply.avatar, inner.x + replyPad, middle - replyPic / 2, replyPic, replyPic / 2);
+        if (reply.avatar) tile(ctx, reply.avatar, left + replyPad, middle - replyPic / 2, replyPic, replyPic / 2);
         ctx.filter = "none";
-        if (reply.image) tile(ctx, reply.image, inner.x + inner.w - replyPad - replyPic, middle - replyPic / 2, replyPic, 8);
+        if (reply.image) tile(ctx, reply.image, left + replyWidth - replyPad - replyPic, middle - replyPic / 2, replyPic, 10);
         let ry = middle - replyTextHeight / 2;
         ctx.textAlign = "left";
         ctx.fillStyle = fg;
         ctx.font = fontSpec(family, replySize, true, false);
-        ctx.fillText(replyName, replyX, ry + replySize * 0.15);
+        ctx.fillText(replyName, textX, ry + replySize * 0.15);
         ctx.fillStyle = sub;
         ctx.font = fontSpec(family, replySize, false, false);
-        for (const line of replyLines) drawLine(line, replyX, ry += replySize * 1.3, replySize);
+        for (const line of replyLines) drawLine(line, textX, ry += replySize * 1.3, replySize);
         y += above;
     }
 
