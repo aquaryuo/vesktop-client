@@ -50,6 +50,7 @@ export interface QuoteStyle {
     emojis: boolean;
     stickers: boolean;
     images: boolean;
+    reply: boolean;
     credit: boolean;
     place: string;
 }
@@ -63,6 +64,7 @@ export interface QuoteContent {
     emojis: { name: string; image?: ImageBitmap; }[];
     stickers: ImageBitmap[];
     images: ImageBitmap[];
+    reply?: { name: string; text: string; avatar?: ImageBitmap; image?: ImageBitmap; };
     name: string;
     username: string;
     quoter: string;
@@ -156,6 +158,19 @@ function cover(ctx: CanvasRenderingContext2D, image: ImageBitmap, x: number, y: 
     ctx.drawImage(image, x + (w - image.width * scale) / 2, y + (h - image.height * scale) / 2, image.width * scale, image.height * scale);
 }
 
+function tile(ctx: CanvasRenderingContext2D, image: ImageBitmap, x: number, y: number, size: number, radius: number) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x, y, size, size, radius);
+    ctx.clip();
+    cover(ctx, image, x, y, size, size);
+    ctx.restore();
+}
+
+function clip(lines: string[], max: number) {
+    return lines.length > max ? [...lines.slice(0, max - 1), lines[max - 1].replace(/.?$/u, "…")] : lines;
+}
+
 function wrap(text: string, maxWidth: number, measure: (s: string) => number) {
     const fits = (s: string) => measure(s) <= maxWidth;
     const lines: string[] = [];
@@ -193,13 +208,16 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
     const fg = style.light ? "#000000" : "#ffffff";
     const sub = banner ? fg + "b8" : style.light ? "#6b6b6b" : "#8a8a8a";
 
-    const text = content.text.replace(EMOJI, c => {
+    const swapEmojis = (s: string) => s.replace(EMOJI, c => {
         const emoji = content.emojis[c.charCodeAt(0) - EMOJI_BASE];
         return style.emojis && emoji.image ? c : `:${emoji.name}:`;
     }).trim();
+    const text = swapEmojis(content.text);
+    const reply = style.reply ? content.reply : undefined;
+    const replyText = reply ? swapEmojis(reply.text) : "";
     const credit = "Quoted by @" + content.quoter;
 
-    const sample = text + content.name + content.username + credit + "“”-";
+    const sample = text + content.name + content.username + credit + "“”-…" + (reply ? reply.name + replyText : "");
     await Promise.all([loadFont(UI_FONT), loadFont(font, sample), loadFont(FONTS[0], sample)]).catch(() => { });
 
     const canvas = document.createElement("canvas");
@@ -267,7 +285,36 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
     const rule = style.vertical ? 32 : 0;
     const footer = rule + nameSize * 1.4 + userSize * 1.4 * (style.credit ? 2 : 1);
     const header = style.vertical ? marksSize * 1.2 : 0;
-    const room = inner.h - footer - gap - header;
+    const span = (s: string, px: number) => ctx.measureText(s.replace(EMOJI, "")).width + (s.match(EMOJI)?.length ?? 0) * px * 1.2;
+    const drawLine = (line: string, left: number, top: number, px: number) => {
+        line.split(/([\uE000-\uF8FF])/).forEach((part, i) => {
+            if (i % 2) {
+                ctx.drawImage(content.emojis[part.charCodeAt(0) - EMOJI_BASE].image!, left + px * 0.05, top + px * 0.1, px * 1.1, px * 1.1);
+                left += px * 1.2;
+            } else {
+                ctx.fillText(part, left, top + px * 0.15);
+                left += ctx.measureText(part).width;
+            }
+        });
+    };
+
+    const replySize = 20;
+    const replyPad = 14;
+    const replyPic = 48;
+    const replyX = inner.x + replyPad + (reply?.avatar ? replyPic + replyPad : 0);
+    const replyW = inner.x + inner.w - replyPad - (reply?.image ? replyPic + replyPad : 0) - replyX;
+    let replyName = "";
+    let replyLines: string[] = [];
+    if (reply) {
+        ctx.font = fontSpec(family, replySize, true, false);
+        [replyName] = clip(wrap(reply.name, replyW, s => ctx.measureText(s).width), 1);
+        ctx.font = fontSpec(family, replySize, false, false);
+        replyLines = clip(wrap(replyText, replyW, s => span(s, replySize)), style.vertical ? 1 : 2);
+    }
+    const replyTextHeight = (replyLines.length + 1) * replySize * 1.3;
+    const replyHeight = reply ? Math.max(replyPic, replyTextHeight) + replyPad * 2 : 0;
+    const above = reply ? replyHeight + gap : 0;
+    const room = inner.h - footer - gap - header - above;
 
     const media = [...style.stickers ? content.stickers : [], ...style.images ? content.images : []];
     const ratio = media.reduce((sum, m) => sum + m.width / m.height, 0);
@@ -275,7 +322,7 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
     const jumbo = !text.replace(EMOJI, "").replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}\p{Join_Control}\p{Variation_Selector}\s]/gu, "");
 
     let size = jumbo ? 160 : style.vertical ? 56 : 52;
-    const measure = (s: string) => ctx.measureText(s.replace(EMOJI, "")).width + (s.match(EMOJI)?.length ?? 0) * size * 1.2;
+    const measure = (s: string) => span(s, size);
     let lines: string[] = [];
     while (text) {
         ctx.font = fontSpec(family, size, style.bold, style.italic);
@@ -283,22 +330,39 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
         if (lines.length * size * 1.3 <= textRoom || size <= 18) break;
         size -= 2;
     }
-    const maxLines = Math.max(1, Math.floor(textRoom / (size * 1.3)));
-    if (lines.length > maxLines) {
-        lines = lines.slice(0, maxLines);
-        lines[maxLines - 1] = lines[maxLines - 1].replace(/.?$/u, "…");
-    }
+    lines = clip(lines, Math.max(1, Math.floor(textRoom / (size * 1.3))));
 
     const textHeight = lines.length * size * 1.3;
     const mediaHeight = media.length ? Math.min(room - textHeight - (text ? gap : 0), (inner.w - gap * (media.length - 1)) / ratio) : 0;
-    const body = header + textHeight + (text && media.length ? gap : 0) + mediaHeight;
+    const body = above + header + textHeight + (text && media.length ? gap : 0) + mediaHeight;
     const top = style.place === "top" ? inner.y + footer + gap : inner.y;
     const bottom = style.place === "top" ? inner.y + inner.h : inner.y + inner.h - footer - gap;
     const start = Math.max(top, Math.min(inner.y + (inner.h - body) / 2, bottom - body));
     const centerX = area.x + area.w / 2;
     let y = start;
-    ctx.textAlign = "center";
     ctx.textBaseline = "top";
+    if (reply) {
+        const middle = y + replyHeight / 2;
+        ctx.fillStyle = fg + "1f";
+        ctx.beginPath();
+        ctx.roundRect(inner.x, y, inner.w, replyHeight, 12);
+        ctx.fill();
+        ctx.filter = style.color ? "none" : "grayscale(1)";
+        if (reply.avatar) tile(ctx, reply.avatar, inner.x + replyPad, middle - replyPic / 2, replyPic, replyPic / 2);
+        ctx.filter = "none";
+        if (reply.image) tile(ctx, reply.image, inner.x + inner.w - replyPad - replyPic, middle - replyPic / 2, replyPic, 8);
+        let ry = middle - replyTextHeight / 2;
+        ctx.textAlign = "left";
+        ctx.fillStyle = fg;
+        ctx.font = fontSpec(family, replySize, true, false);
+        ctx.fillText(replyName, replyX, ry + replySize * 0.15);
+        ctx.fillStyle = sub;
+        ctx.font = fontSpec(family, replySize, false, false);
+        for (const line of replyLines) drawLine(line, replyX, ry += replySize * 1.3, replySize);
+        y += above;
+    }
+
+    ctx.textAlign = "center";
     ctx.fillStyle = fg;
     if (banner) {
         ctx.shadowColor = bg + "99";
@@ -314,16 +378,7 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
     ctx.font = fontSpec(family, size, style.bold, style.italic);
     ctx.textAlign = "left";
     for (const line of lines) {
-        let x = centerX - measure(line) / 2;
-        line.split(/([\uE000-\uF8FF])/).forEach((part, i) => {
-            if (i % 2) {
-                ctx.drawImage(content.emojis[part.charCodeAt(0) - EMOJI_BASE].image!, x + size * 0.05, y + size * 0.1, size * 1.1, size * 1.1);
-                x += size * 1.2;
-            } else {
-                ctx.fillText(part, x, y + size * 0.15);
-                x += ctx.measureText(part).width;
-            }
-        });
+        drawLine(line, centerX - measure(line) / 2, y, size);
         y += size * 1.3;
     }
     ctx.textAlign = "center";

@@ -6,9 +6,10 @@ import { classes } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { saveFile } from "@utils/web";
 import type { Message } from "@vencord/discord-types";
+import { MessageType } from "@vencord/discord-types/enums";
 import { findByCodeLazy } from "@webpack";
 import { applyPalette, GIFEncoder, quantize } from "gifenc";
-import { ChannelStore, Constants, FluxDispatcher, GuildMemberStore, IconUtils, MessageStore, PendingReplyStore, React, RestAPI, showToast, UploadHandler, UserProfileStore, UserStore, UserUtils, useEffect, useRef, useState } from "@webpack/common";
+import { ChannelStore, Constants, FluxDispatcher, GuildMemberStore, IconUtils, MessageStore, PendingReplyStore, React, ReferencedMessageStore, RestAPI, showToast, UploadHandler, UserProfileStore, UserStore, UserUtils, useEffect, useRef, useState } from "@webpack/common";
 
 import { EFFECTS, EMOJI_BASE, FONTS, PLACES, QuoteContent, QuoteStyle, renderQuote, unloadFonts } from "./draw";
 import managedStyle from "./styles.css?managed";
@@ -42,12 +43,19 @@ const TOGGLES: [keyof QuoteStyle, string, string | { d: string; }][] = [
     ["emojis", "Custom emojis", { d: "M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01" }],
     ["stickers", "Stickers", { d: "M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3zM15 3v4a2 2 0 0 0 2 2h4M8 13h.01M16 13h.01M10 16s.8 1 2 1c1.3 0 2-1 2-1" }],
     ["images", "Images", { d: "M18 22H4a2 2 0 0 1-2-2V6M22 13l-1.296-1.296a2.41 2.41 0 0 0-3.408 0L11 18M10 8a2 2 0 1 0 4 0a2 2 0 1 0-4 0M8 2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" }],
+    ["reply", "Show reply", { d: "m9 17-5-5 5-5M20 18v-2a4 4 0 0 0-4-4H4" }],
     ["credit", "Quoted by", { d: "M12 20h9M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z" }],
 ];
 
-const ON_BY_DEFAULT: (keyof QuoteStyle)[] = ["emojis", "stickers", "images"];
+const ON_BY_DEFAULT: (keyof QuoteStyle)[] = ["banner", "emojis", "stickers", "images", "reply"];
+
+const CHANGED_DEFAULTS = [["banner", "off", "on"], ["effect", "glass", "dim"], ["place", "below", "bottom"]] as const;
 
 const settings = definePluginSettings({
+    defaults: {
+        type: OptionType.CUSTOM,
+        default: 0
+    },
     font: {
         type: OptionType.SELECT,
         description: "Default font",
@@ -56,12 +64,12 @@ const settings = definePluginSettings({
     effect: {
         type: OptionType.SELECT,
         description: "Default banner effect",
-        options: EFFECTS.map(fx => ({ label: fx.name, value: fx.alias, default: fx === EFFECTS[0] }))
+        options: EFFECTS.map(fx => ({ label: fx.name, value: fx.alias, default: fx.alias === "dim" }))
     },
     place: {
         type: OptionType.SELECT,
         description: "Default name position",
-        options: PLACES.map(p => ({ label: p.name, value: p.alias, default: p === PLACES[0] }))
+        options: PLACES.map(p => ({ label: p.name, value: p.alias, default: p.alias === "bottom" }))
     },
     format: {
         type: OptionType.SELECT,
@@ -85,11 +93,7 @@ const settings = definePluginSettings({
 
 const locked = (key: keyof QuoteStyle) => settings.store[key] === "always" || settings.store[key] === "never";
 
-async function findMessage(ref: string, channelId: string): Promise<Message | undefined> {
-    const link = ref.match(/channels\/(?:@me|\d+)\/(\d+)\/(\d+)/);
-    const [cid, mid] = link ? [link[1], link[2]] : [channelId, ref];
-    if (!/^\d{17,20}$/.test(mid)) return;
-
+async function loadMessage(cid: string, mid: string): Promise<Message | undefined> {
     const cached = MessageStore.getMessage(cid, mid);
     if (cached) return cached;
 
@@ -103,7 +107,15 @@ async function findMessage(ref: string, channelId: string): Promise<Message | un
     return createMessageRecord(raw);
 }
 
-function cleanText(content: string, emojis: { name: string; id: string; }[]) {
+async function findMessage(ref: string, channelId: string) {
+    const link = ref.match(/channels\/(?:@me|\d+)\/(\d+)\/(\d+)/);
+    const [cid, mid] = link ? [link[1], link[2]] : [channelId, ref];
+    if (/^\d{17,20}$/.test(mid)) return loadMessage(cid, mid);
+}
+
+type EmojiRef = { name: string; id: string; };
+
+function cleanText(content: string, emojis: EmojiRef[]) {
     return content
         .replace(/[\uE000-\uF8FF]/g, "")
         .replace(/<a?:(\w+):(\d+)>/g, (_, name, id) => {
@@ -219,13 +231,14 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
             .catch(() => showToast({ text: "Couldn't save the quote", variant: "critical" }));
     };
 
-    const { serverAvatar, banner, serverBanner, emojis, stickers, images } = quote.content;
+    const { serverAvatar, banner, serverBanner, emojis, stickers, images, reply } = quote.content;
     const missing: Partial<Record<keyof QuoteStyle, boolean>> = {
         server: !serverAvatar && !(serverBanner && style.banner),
         banner: !banner && !serverBanner,
         emojis: !emojis.some(e => e.image),
         stickers: !stickers.length,
-        images: !images.length
+        images: !images.length,
+        reply: !reply
     };
 
     const copy = () => {
@@ -281,40 +294,83 @@ async function loadBanners(userId: string, guildId: string | undefined, webhook:
     ]);
 }
 
-async function makeQuote(ref: string, channelId: string) {
-    const reply = PendingReplyStore.getPendingReply(channelId);
-    if (reply) FluxDispatcher.dispatch({ type: "DELETE_PENDING_REPLY", channelId });
+const MAX_MESSAGES = 10;
 
-    const [helsea, message] = await Promise.all([helseaAuthor(), ref ? findMessage(ref, channelId) : reply?.message]);
-    if (!message) {
-        sendBotMessage(channelId, { author: helsea, content: ref ? "Couldn't find that message." : "Reply to a message first, or use /quote-link with a message ID or link." });
-        return;
-    }
-
+function readMessage(message: Message, emojis: EmojiRef[]) {
     const spoilers = message.content.match(/\|\|[\s\S]*?\|\|/g) ?? [];
     const bare = (link: string) => link.replace(/[?#].*$/, "");
     const embeds = message.embeds.filter(e => (e.type === "image" || e.type === "gifv") && (e.image ?? e.thumbnail) && !spoilers.some(s => s.includes(bare(e.url))));
     const links = new Set(embeds.map(e => bare(e.url)));
     const onlyMedia = message.content.trim().split(/\s+/).every(word => links.has(bare(word)));
-    const emojiRefs: { name: string; id: string; }[] = [];
-    const text = onlyMedia ? "" : cleanText(message.content, emojiRefs);
-    const stickerItems = message.stickerItems.filter(s => s.format_type !== 3);
-    const attachments = message.attachments.filter(a => a.content_type?.startsWith("image/") && !a.spoiler);
-    const imageURLs = [
-        ...attachments.map(imageURL),
-        ...embeds.map(e => {
-            const media = (e.image ?? e.thumbnail)!;
-            return imageURL({ proxy_url: media.proxyURL ?? media.url, width: media.width, height: media.height });
-        })
-    ];
-    if (!text && !stickerItems.length && !imageURLs.length) {
-        sendBotMessage(channelId, { author: helsea, content: "That message has nothing to quote." });
+    return {
+        text: onlyMedia ? "" : cleanText(message.content, emojis),
+        stickers: message.stickerItems.filter(s => s.format_type !== 3),
+        images: [
+            ...message.attachments.filter(a => a.content_type?.startsWith("image/") && !a.spoiler).map(imageURL),
+            ...embeds.map(e => {
+                const media = (e.image ?? e.thumbnail)!;
+                return imageURL({ proxy_url: media.proxyURL ?? media.url, width: media.width, height: media.height });
+            })
+        ]
+    };
+}
+
+function nameOf({ id, globalName, username }: Message["author"], guildId: string | undefined) {
+    return (guildId && GuildMemberStore.getNick(guildId, id)) || globalName || username;
+}
+
+async function loadReply({ type, messageReference }: Message, guildId: string | undefined, emojis: EmojiRef[]) {
+    if (type !== MessageType.REPLY || !messageReference) return;
+    const { channel_id, message_id } = messageReference;
+    const replied = ReferencedMessageStore.getMessageByReference(messageReference)?.message ?? await loadMessage(channel_id, message_id);
+    if (!replied) return;
+    const { text, stickers, images } = readMessage(replied, emojis);
+    const [avatar, image] = await Promise.all([
+        loadOptional(IconUtils.getUserAvatarURL(replied.author, false, 128)),
+        loadOptional(images[0] ?? (stickers.length ? stickerURL(stickers[0]) : undefined))
+    ]);
+    const kind = replied.stickerItems.length ? "Sticker" : images.length ? "Image" : replied.attachments.length ? "Attachment" : "Message";
+    return { name: nameOf(replied.author, guildId), text: text.replace(/\s+/g, " ") || kind, avatar, image };
+}
+
+async function makeQuote(ref: string, channelId: string) {
+    const pending = PendingReplyStore.getPendingReply(channelId);
+    if (pending) FluxDispatcher.dispatch({ type: "DELETE_PENDING_REPLY", channelId });
+
+    const refs = ref.split(/[\s,]+/).filter(Boolean);
+    if (refs.length > MAX_MESSAGES) {
+        sendBotMessage(channelId, { author: await helseaAuthor(), content: `You can quote up to ${MAX_MESSAGES} messages at once.` });
         return;
     }
 
+    const [helsea, found] = await Promise.all([helseaAuthor(), Promise.all(refs.length ? refs.map(r => findMessage(r, channelId)) : [pending?.message])]);
+    const say = (content: string) => sendBotMessage(channelId, { author: helsea, content });
+    const lost = found.findIndex(m => !m);
+    if (lost >= 0) {
+        say(!refs.length ? "Reply to a message first, or use /quote-link with message IDs or links." : refs.length > 1 ? `Couldn't find message ${lost + 1}.` : "Couldn't find that message.");
+        return;
+    }
+    const messages = found as Message[];
+    const [message] = messages;
     const { author } = message;
+    if (messages.some(m => m.author.id !== author.id)) {
+        say("Those messages are from different people. A quote can only stack messages from one person.");
+        return;
+    }
+
+    const emojiRefs: EmojiRef[] = [];
+    const read = messages.map(m => readMessage(m, emojiRefs));
+    const text = read.map(m => m.text).filter(Boolean).join("\n");
+    const stickerItems = read.flatMap(m => m.stickers);
+    const imageURLs = read.flatMap(m => m.images);
+    if (!text && !stickerItems.length && !imageURLs.length) {
+        say(messages.length > 1 ? "Those messages have nothing to quote." : "That message has nothing to quote.");
+        return;
+    }
+
     const guildId = ChannelStore.getChannel(message.channel_id)?.guild_id;
     const member = guildId ? GuildMemberStore.getMember(guildId, author.id) : null;
+    const reply = await loadReply(message, guildId, emojiRefs).catch(() => undefined);
     try {
         const [avatar, serverAvatar, [banner, serverBanner], emojis, stickers, images] = await Promise.all([
             loadImage(IconUtils.getUserAvatarURL(author, false, 512)),
@@ -335,7 +391,8 @@ async function makeQuote(ref: string, channelId: string) {
                 emojis,
                 stickers,
                 images,
-                name: (guildId && GuildMemberStore.getNick(guildId, author.id)) || author.globalName || author.username,
+                reply,
+                name: nameOf(author, guildId),
                 username: author.username,
                 quoter: UserStore.getCurrentUser().username
             },
@@ -362,10 +419,16 @@ function startQuote(ref: string, channelId: string) {
 
 export default definePlugin({
     name: "Quote",
-    description: "Use /quote while replying to a message, or /quote-link with a message ID or link, to make a quote image only you can see.",
+    description: "Use /quote while replying to a message, or /quote-link with one or more message IDs or links, to make a quote image only you can see. Several messages from one person stack in the order you give them.",
     authors: [{ name: "aquaryuo", id: 975151124824879125n }],
     managedStyle,
     settings,
+
+    start() {
+        if (settings.store.defaults) return;
+        for (const [key, before, after] of CHANGED_DEFAULTS) if (settings.store[key] === before) settings.store[key] = after;
+        settings.store.defaults = 1;
+    },
 
     stop() {
         quotes.clear();
@@ -412,12 +475,12 @@ export default definePlugin({
         },
         {
             name: "quote-link",
-            description: "Quote a message from its link or ID. Only you see it",
+            description: "Quote messages from their links or IDs, stacked in order. Only you see it",
             inputType: ApplicationCommandInputType.BUILT_IN,
             options: [
                 {
                     name: "message",
-                    description: "Message link, or the ID of a message in this channel",
+                    description: "Message links, or IDs of messages in this channel, separated by spaces",
                     type: ApplicationCommandOptionType.STRING,
                     required: true
                 }

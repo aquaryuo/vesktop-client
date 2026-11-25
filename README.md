@@ -2,7 +2,7 @@
 
 My plugins for Vencord and Equicord:
 
-- Quote: `/quote` on a reply, or `/quote-link` with a message link, draws the message as a quote image only you see. You can send, save or copy it.
+- Quote: `/quote` on a reply, or `/quote-link` with one or more message links, draws the message as a quote image only you see. Several messages from one person stack in the order you give them, and a reply can show the message it answers. You can send, save or copy it.
 - Emoji Interface: restyles the emoji, sticker and GIF picker, and adds resizing, GIF tags, a Downloads tab, hiding servers and categories, and moving favorites between accounts.
 - MyCommands: gives these plugins' commands their own section in the command list.
 - FakePing: right-click a message and pick Fake Ping to highlight it like a ping. Only you see it.
