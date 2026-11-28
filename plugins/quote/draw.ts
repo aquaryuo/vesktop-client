@@ -55,6 +55,8 @@ export interface QuoteStyle {
     place: string;
 }
 
+export type Media = { image: ImageBitmap; end: number; }[];
+
 export interface QuoteContent {
     avatar: ImageBitmap;
     serverAvatar?: ImageBitmap;
@@ -62,8 +64,8 @@ export interface QuoteContent {
     serverBanner?: ImageBitmap;
     text: string;
     emojis: { name: string; image?: ImageBitmap; }[];
-    stickers: ImageBitmap[];
-    images: ImageBitmap[];
+    stickers: Media[];
+    images: Media[];
     reply?: { name: string; text: string; avatar?: ImageBitmap; image?: ImageBitmap; };
     name: string;
     username: string;
@@ -196,7 +198,16 @@ function wrap(text: string, maxWidth: number, measure: (s: string) => number) {
     return lines;
 }
 
-export async function renderQuote(content: QuoteContent, style: QuoteStyle): Promise<Blob> {
+export function shownMedia(content: QuoteContent, style: QuoteStyle) {
+    return [...style.stickers ? content.stickers : [], ...style.images ? content.images : []];
+}
+
+function frameAt(media: Media, time: number) {
+    const t = time % (media.at(-1)!.end || 1);
+    return (media.find(f => t < f.end) ?? media[0]).image;
+}
+
+export async function renderQuote(content: QuoteContent, style: QuoteStyle, time = 0) {
     const font = FONTS.find(f => f.alias === style.font) ?? FONTS[0];
     const { family } = font;
     const [width, height] = style.vertical ? [720, 1280] : [1200, 630];
@@ -298,7 +309,7 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
         });
     };
 
-    const media = [...style.stickers ? content.stickers : [], ...style.images ? content.images : []];
+    const media = shownMedia(content, style).map(m => frameAt(m, time));
     const replyPad = 16;
     const replyPic = 64;
     const replyEnds = replyPad * 2 + (reply?.avatar ? replyPic + replyPad : 0) + (reply?.image ? replyPic + replyPad : 0);
@@ -415,5 +426,5 @@ export async function renderQuote(content: QuoteContent, style: QuoteStyle): Pro
     fy += userSize * 1.4;
     if (style.credit) ctx.fillText(credit, centerX, fy);
 
-    return new Promise((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error("Quote render failed")), "image/png"));
+    return canvas;
 }

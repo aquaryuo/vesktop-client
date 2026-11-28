@@ -11,7 +11,7 @@ import { findByCodeLazy } from "@webpack";
 import { applyPalette, GIFEncoder, quantize } from "gifenc";
 import { ChannelStore, Constants, FluxDispatcher, GuildMemberStore, IconUtils, MessageStore, PendingReplyStore, React, ReferencedMessageStore, RestAPI, showToast, UploadHandler, UserProfileStore, UserStore, UserUtils, useEffect, useRef, useState } from "@webpack/common";
 
-import { EFFECTS, EMOJI_BASE, FONTS, PLACES, QuoteContent, QuoteStyle, renderQuote, unloadFonts } from "./draw";
+import { EFFECTS, EMOJI_BASE, FONTS, Media, PLACES, QuoteContent, QuoteStyle, renderQuote, shownMedia, unloadFonts } from "./draw";
 import managedStyle from "./styles.css?managed";
 
 interface Quote {
@@ -73,7 +73,7 @@ const settings = definePluginSettings({
     },
     format: {
         type: OptionType.SELECT,
-        description: "File type for Send and Save. A GIF can be added to favorite GIFs",
+        description: "File type for Send and Save. A GIF keeps quoted GIFs moving and can be added to favorite GIFs",
         options: [
             { label: "GIF", value: "gif", default: true },
             { label: "PNG", value: "png" }
@@ -129,19 +129,145 @@ function cleanText(content: string, emojis: EmojiRef[]) {
         .trim();
 }
 
-async function loadImage(url: string) {
+async function fetchBlob(url: string) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Image request failed with ${res.status}`);
-    return createImageBitmap(await res.blob());
+    return res.blob();
+}
+
+async function loadImage(url: string) {
+    return createImageBitmap(await fetchBlob(url));
 }
 
 function loadOptional(url: string | false | null | undefined) {
     return url ? loadImage(url).catch(() => undefined) : undefined;
 }
 
-async function loadAll(urls: (string | undefined)[]) {
-    const images = await Promise.all(urls.map(loadOptional));
-    return images.filter((i): i is ImageBitmap => i !== undefined);
+const MAX_FRAMES = 120;
+const MIN_DELAY = 20;
+const VIDEO_STEP = 50;
+const MAX_SIDE = 640;
+
+function fit(width: number, height: number): ImageBitmapOptions {
+    const scale = Math.min(1, MAX_SIDE / Math.max(width, height));
+    return { resizeWidth: Math.round(width * scale), resizeHeight: Math.round(height * scale), resizeQuality: "high" };
+}
+
+async function animationFrames(blob: Blob) {
+    if (typeof ImageDecoder === "undefined" || !await ImageDecoder.isTypeSupported(blob.type)) return;
+    const decoder = new ImageDecoder({ data: await blob.arrayBuffer(), type: blob.type });
+    try {
+        await decoder.tracks.ready;
+        const count = Math.min(decoder.tracks.selectedTrack?.frameCount ?? 1, MAX_FRAMES);
+        if (count < 2) return;
+        const frames: Media = [];
+        let end = 0;
+        for (let frameIndex = 0; frameIndex < count; frameIndex++) {
+            const { image } = await decoder.decode({ frameIndex });
+            const ms = (image.duration ?? 0) / 1000;
+            frames.push({ image: await createImageBitmap(image, fit(image.displayWidth, image.displayHeight)), end: end += ms > 10 ? ms : 100 });
+            image.close();
+        }
+        return frames;
+    } finally {
+        decoder.close();
+    }
+}
+
+async function imageFrames(blob: Blob): Promise<Media> {
+    return await animationFrames(blob).catch(() => undefined) ?? [{ image: await createImageBitmap(blob), end: 0 }];
+}
+
+async function videoFrames(blob: Blob): Promise<Media> {
+    const video = document.createElement("video");
+    video.muted = true;
+    video.src = URL.createObjectURL(blob);
+    const next = (event: string) => new Promise((resolve, reject) => {
+        video.addEventListener(event, resolve, { once: true });
+        video.addEventListener("error", reject, { once: true });
+    });
+    try {
+        await next("loadeddata");
+        if (!Number.isFinite(video.duration)) throw new Error("Video has no length");
+        const frames: Media = [];
+        for (let time = 0; time < video.duration * 1000 && frames.length < MAX_FRAMES; time += VIDEO_STEP) {
+            const seeked = next("seeked");
+            video.currentTime = time / 1000;
+            await seeked;
+            frames.push({ image: await createImageBitmap(video, fit(video.videoWidth, video.videoHeight)), end: time + VIDEO_STEP });
+        }
+        return frames;
+    } finally {
+        URL.revokeObjectURL(video.src);
+        video.removeAttribute("src");
+        video.load();
+    }
+}
+
+interface MediaRef {
+    still?: string;
+    video?: string;
+}
+
+async function loadMedia({ still, video }: MediaRef) {
+    const moving = video && await fetchBlob(video).then(videoFrames).catch(() => undefined);
+    if (moving?.length) return moving;
+    return still ? imageFrames(await fetchBlob(still)) : undefined;
+}
+
+async function loadAll(refs: MediaRef[]) {
+    const media = await Promise.all(refs.map(r => loadMedia(r).catch(() => undefined)));
+    return media.filter((m): m is Media => m !== undefined);
+}
+
+function frameTimes(media: Media[]) {
+    const length = Math.max(0, ...media.map(m => m.at(-1)!.end));
+    const gap = Math.max(MIN_DELAY, length / MAX_FRAMES);
+    const cuts = media.flatMap(m => {
+        const loop = m.at(-1)!.end;
+        const ends: number[] = [];
+        for (let start = 0; loop && start < length; start += loop) ends.push(...m.map(f => start + f.end));
+        return ends;
+    }).sort((a, b) => a - b);
+    const times = [0];
+    for (const t of cuts) if (t < length && t - times.at(-1)! >= gap) times.push(t);
+    while (times.length > 1 && length - times.at(-1)! < MIN_DELAY) times.pop();
+    return { times, length };
+}
+
+const toPng = (canvas: HTMLCanvasElement) => new Promise<Blob>((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error("Quote render failed")), "image/png"));
+
+async function makeGif(content: QuoteContent, style: QuoteStyle, signal?: AbortSignal) {
+    const { times, length } = frameTimes(shownMedia(content, style));
+    const gif = GIFEncoder();
+    let last: Uint8ClampedArray | undefined;
+    for (const [i, time] of times.entries()) {
+        signal?.throwIfAborted();
+        const canvas = await renderQuote(content, style, time);
+        const { data, width, height } = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height);
+        const delay = (times[i + 1] ?? length) - time;
+        if (!last) {
+            const palette = quantize(data, 256);
+            gif.writeFrame(applyPalette(data, palette), width, height, { palette, delay });
+        } else {
+            const changed: number[] = [];
+            for (let p = 0; p < data.length; p += 4) {
+                if (data[p] !== last[p] || data[p + 1] !== last[p + 1] || data[p + 2] !== last[p + 2]) changed.push(p);
+            }
+            const pixels = new Uint8ClampedArray(changed.length * 4);
+            changed.forEach((p, j) => pixels.set(data.subarray(p, p + 4), j * 4));
+            const palette = changed.length ? quantize(pixels, 255) : [];
+            const mapped = changed.length ? applyPalette(pixels, palette) : new Uint8Array();
+            const transparentIndex = palette.push([0, 0, 0]) - 1;
+            const index = new Uint8Array(width * height).fill(transparentIndex);
+            changed.forEach((p, j) => index[p / 4] = mapped[j]);
+            gif.writeFrame(index, width, height, { palette, delay, transparent: true, transparentIndex, dispose: 1 });
+        }
+        last = data;
+        await new Promise(resolve => setTimeout(resolve));
+    }
+    gif.finish();
+    return new Blob([gif.bytesView() as Uint8Array<ArrayBuffer>], { type: "image/gif" });
 }
 
 function stickerURL({ id, format_type }: Message["stickerItems"][number]) {
@@ -156,20 +282,6 @@ function imageURL({ proxy_url, width, height }: { proxy_url: string; width?: num
     url.searchParams.set("width", String(Math.round(width * scale)));
     url.searchParams.set("height", String(Math.round(height * scale)));
     return url.href;
-}
-
-async function toGif(png: Blob) {
-    const bitmap = await createImageBitmap(png);
-    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-    const ctx = canvas.getContext("2d")!;
-    ctx.drawImage(bitmap, 0, 0);
-    bitmap.close();
-    const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const palette = quantize(data, 256);
-    const gif = GIFEncoder();
-    gif.writeFrame(applyPalette(data, palette), width, height, { palette });
-    gif.finish();
-    return new Blob([gif.bytesView() as Uint8Array<ArrayBuffer>], { type: "image/gif" });
 }
 
 const FONT_ITEMS = FONTS.map(f => ({ alias: f.alias, name: `${f.family} (${f.alias})` }));
@@ -199,25 +311,32 @@ function QuoteCard({ quote, channelId }: { quote: Quote; channelId: string; }) {
 
     useEffect(() => {
         quote.style = style;
-        let alive = true;
-        let made: string | undefined;
-        renderQuote(quote.content, style).then(b => {
-            if (!alive) return;
+        gif.current = undefined;
+        const abort = new AbortController();
+        const made: string[] = [];
+        const show = (b: Blob) => {
+            if (abort.signal.aborted) return;
+            made.push(URL.createObjectURL(b));
+            setUrl(made.at(-1));
+        };
+        renderQuote(quote.content, style).then(toPng).then(b => {
+            if (abort.signal.aborted) return;
             blob.current = b;
-            gif.current = undefined;
-            made = URL.createObjectURL(b);
-            setUrl(made);
+            show(b);
+            if (settings.store.format === "gif" && shownMedia(quote.content, style).some(m => m.length > 1)) {
+                (gif.current ??= makeGif(quote.content, style, abort.signal)).then(show, () => { });
+            }
         }).catch(() => showToast({ text: "Couldn't draw the quote", variant: "critical" }));
         return () => {
-            alive = false;
-            if (made) URL.revokeObjectURL(made);
+            abort.abort();
+            made.forEach(u => URL.revokeObjectURL(u));
         };
     }, [style]);
 
     const file = async () => {
         if (!blob.current) return;
         if (settings.store.format !== "gif") return new File([blob.current], "quote.png", { type: "image/png" });
-        return new File([await (gif.current ??= toGif(blob.current))], "quote.gif", { type: "image/gif" });
+        return new File([await (gif.current ??= makeGif(quote.content, style))], "quote.gif", { type: "image/gif" });
     };
 
     const send = () => {
@@ -306,10 +425,13 @@ function readMessage(message: Message, emojis: EmojiRef[]) {
         text: onlyMedia ? "" : cleanText(message.content, emojis),
         stickers: message.stickerItems.filter(s => s.format_type !== 3),
         images: [
-            ...message.attachments.filter(a => a.content_type?.startsWith("image/") && !a.spoiler).map(imageURL),
-            ...embeds.map(e => {
+            ...message.attachments.filter(a => a.content_type?.startsWith("image/") && !a.spoiler).map((a): MediaRef => ({ still: imageURL(a) })),
+            ...embeds.map((e): MediaRef => {
                 const media = (e.image ?? e.thumbnail)!;
-                return imageURL({ proxy_url: media.proxyURL ?? media.url, width: media.width, height: media.height });
+                return {
+                    still: imageURL({ proxy_url: media.proxyURL ?? media.url, width: media.width, height: media.height }),
+                    video: e.type === "gifv" ? e.video?.proxyURL ?? e.video?.url : undefined
+                };
             })
         ]
     };
@@ -327,7 +449,7 @@ async function loadReply({ type, messageReference }: Message, guildId: string | 
     const { text, stickers, images } = readMessage(replied, emojis);
     const [avatar, image] = await Promise.all([
         loadOptional(IconUtils.getUserAvatarURL(replied.author, false, 128)),
-        loadOptional(images[0] ?? (stickers.length ? stickerURL(stickers[0]) : undefined))
+        loadOptional(images[0]?.still ?? (stickers.length ? stickerURL(stickers[0]) : undefined))
     ]);
     const kind = replied.stickerItems.length ? "Sticker" : images.length ? "Image" : replied.attachments.length ? "Attachment" : "Message";
     return { name: nameOf(replied.author, guildId), text: text.replace(/\s+/g, " ") || kind, avatar, image };
@@ -362,8 +484,8 @@ async function makeQuote(ref: string, channelId: string) {
     const read = messages.map(m => readMessage(m, emojiRefs));
     const text = read.map(m => m.text).filter(Boolean).join("\n");
     const stickerItems = read.flatMap(m => m.stickers);
-    const imageURLs = read.flatMap(m => m.images);
-    if (!text && !stickerItems.length && !imageURLs.length) {
+    const imageRefs = read.flatMap(m => m.images);
+    if (!text && !stickerItems.length && !imageRefs.length) {
         say(messages.length > 1 ? "Those messages have nothing to quote." : "That message has nothing to quote.");
         return;
     }
@@ -377,8 +499,8 @@ async function makeQuote(ref: string, channelId: string) {
             loadOptional(guildId && member?.avatar && IconUtils.getGuildMemberAvatarURLSimple({ guildId, userId: author.id, avatar: member.avatar, size: 512 })),
             loadBanners(author.id, guildId, !!message.webhookId),
             Promise.all(emojiRefs.map(async e => ({ name: e.name, image: await loadOptional(IconUtils.getEmojiURL({ id: e.id, animated: false, size: 256 })) }))),
-            loadAll(stickerItems.map(stickerURL)),
-            loadAll(imageURLs.slice(0, 4))
+            loadAll(stickerItems.map(s => ({ still: stickerURL(s) }))),
+            loadAll(imageRefs.slice(0, 4))
         ]);
         const id = generateId();
         quotes.set(id, {
